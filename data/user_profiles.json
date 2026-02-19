@@ -1,14 +1,36 @@
 {
-  "profiles": [],
-  "default_preferences": {
-    "language": "id",
-    "theme": "dark",
-    "notification_level": "normal",
-    "auto_save": true,
-    "max_history": 100
-  },
+  "profiles": [
+    {
+      "user_id": "test_user",
+      "name": "Tester",
+      "preferences": {
+        "language": "id",
+        "theme": "dark",
+        "notification_level": "normal",
+        "auto_save": true,
+        "max_history": 100
+      },
+      "created_at": 1771483247.7557528,
+      "last_active": 1771483247.7557538,
+      "interaction_count": 0
+    },
+    {
+      "user_id": "default_user",
+      "name": "User",
+      "preferences": {
+        "language": "id",
+        "theme": "dark",
+        "notification_level": "normal",
+        "auto_save": true,
+        "max_history": 100
+      },
+      "created_at": 1771483278.7469664,
+      "last_active": 1771483278.7469666,
+      "interaction_count": 0
+    }
+  ],
   "metadata": {
     "version": "1.0.0",
-    "last_updated": null
+    "last_updated": 1771483278.7469919
   }
 }
