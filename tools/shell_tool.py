@@ -37,8 +37,9 @@ MAX_OUTPUT_SIZE = 100000
 
 
 class ShellTool:
-    def __init__(self, working_dir: str = ".", timeout: int = 120, max_concurrent: int = 5):
+    def __init__(self, working_dir: str = "/home/runner/workspace/user_workspace", timeout: int = 120, max_concurrent: int = 5):
         self.working_dir = os.path.abspath(working_dir)
+        os.makedirs(self.working_dir, exist_ok=True)
         self.timeout = timeout
         self.max_concurrent = max_concurrent
         self.command_history: list[dict] = []

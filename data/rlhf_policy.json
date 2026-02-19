@@ -67,15 +67,15 @@
     },
     "slides_tool": {
       "tool_name": "slides_tool",
-      "total_reward": 1.2,
-      "usage_count": 1,
-      "success_count": 1,
+      "total_reward": 2.4,
+      "usage_count": 2,
+      "success_count": 2,
       "fail_count": 0,
       "avg_reward": 1.2,
-      "confidence": 0.02,
+      "confidence": 0.04,
       "success_rate": 1.0,
       "context_rewards": {
-        "execution": 0.36
+        "execution": 0.612
       }
     },
     "webdev_tool": {
@@ -132,7 +132,7 @@
     }
   },
   "metadata": {
-    "last_updated": 1771510676.9116986,
+    "last_updated": 1771512691.5919168,
     "learning_rate": 0.1,
     "exploration_rate": 0.15
   }

@@ -287,6 +287,41 @@ async function sendStreamingMessage(message) {
                     await loadSessions();
                     break;
 
+                case 'planning':
+                    removeThinking();
+                    updateStatusBar(event.content || 'Creating plan...');
+                    addStep('Planning: ' + (event.content || 'Analyzing request...'), 'running');
+                    showThinkingWithText(event.content || 'Creating plan...');
+                    break;
+
+                case 'plan':
+                    removeThinking();
+                    markLastStepCompleted();
+                    showPlanCard(event.goal, event.steps);
+                    addStep('Plan created: ' + (event.goal || ''), 'completed');
+                    break;
+
+                case 'thinking':
+                    removeThinking();
+                    updateStatusBar('Reasoning...');
+                    addStep('Thinking: ' + (event.content || '').substring(0, 80) + '...', 'running');
+                    showThinkingWithText(event.content || 'Analyzing...');
+                    break;
+
+                case 'reflection':
+                    removeThinking();
+                    markLastStepCompleted();
+                    addStep('Reflection: ' + (event.content || '').substring(0, 80), 'completed');
+                    showThinkingWithText('Reflecting on results...');
+                    break;
+
+                case 'phase':
+                    removeThinking();
+                    updateStatusBar(event.content || event.phase);
+                    addStep(event.content || `Phase: ${event.phase}`, 'running');
+                    showThinkingWithText(event.content || event.phase);
+                    break;
+
                 case 'error':
                     removeThinking();
                     removeStreamingBubble();
@@ -1143,6 +1178,30 @@ function showThinkingWithText(text) {
 
 function removeThinking() {
     document.getElementById('thinkingIndicator')?.remove();
+}
+
+function showPlanCard(goal, steps) {
+    const container = document.getElementById('messagesContainer');
+    const card = document.createElement('div');
+    card.className = 'plan-card';
+    card.innerHTML = `
+        <div class="plan-header">
+            <i class="ri-list-check"></i>
+            <span>Execution Plan</span>
+        </div>
+        <div class="plan-goal">${escapeHtml(goal || 'Task execution plan')}</div>
+        <div class="plan-steps">
+            ${(steps || []).map((step, i) => `
+                <div class="plan-step" id="plan-step-${i}">
+                    <span class="plan-step-num">${i + 1}</span>
+                    <span class="plan-step-text">${escapeHtml(step)}</span>
+                    <i class="ri-checkbox-blank-circle-line plan-step-status"></i>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    container.appendChild(card);
+    scrollToBottom();
 }
 
 function updateStatusBar(text) {

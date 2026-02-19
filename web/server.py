@@ -388,6 +388,9 @@ async def api_chat_stream(session_id: str, request: Request):
         agent = get_agent()
         tool_executions = []
         final_response = ""
+        raw_response = ""
+        current_goal = user_message
+        current_plan_steps = []
 
         try:
             agent.context_manager.clear()
@@ -398,17 +401,25 @@ async def api_chat_stream(session_id: str, request: Request):
 
             max_iterations = agent.max_iterations
 
-            intent_bypass = detect_intent(user_message)
-            skip_llm_loop = False
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'planning', 'content': 'Analyzing request...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'planning', 'content': 'Creating execution plan...'})}\n\n"
 
-            if intent_bypass:
-                skip_llm_loop = True
-                logger.info(f"Stream intent bypass: {intent_bypass['type']} -> {intent_bypass.get('tool', 'multi')}")
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Intent terdeteksi, menjalankan tool...'})}\n\n"
+            plan_result = await agent._create_initial_plan(user_message)
 
-                if intent_bypass["type"] == "use_tool":
-                    tool_name = intent_bypass["tool"]
-                    params = intent_bypass.get("params", {})
+            if plan_result and "direct_response" in plan_result:
+                final_response = plan_result["direct_response"]
+                for char_idx in range(0, len(final_response), 3):
+                    text_chunk = final_response[char_idx:char_idx+3]
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
+                    await asyncio.sleep(0.01)
+
+            elif plan_result and "immediate_action" in plan_result:
+                action = plan_result["immediate_action"]
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'executing', 'content': 'Executing immediate action...'})}\n\n"
+
+                if action["type"] == "use_tool":
+                    tool_name = action["tool"]
+                    params = action.get("params", {})
                     start_time = time.time()
                     yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
                     result = await agent._execute_tool(tool_name, params)
@@ -420,12 +431,11 @@ async def api_chat_stream(session_id: str, request: Request):
                     tool_executions.append(tool_exec)
                     log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
                     yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
-                    observation = f"[Hasil {tool_name}]:\n{result}"
                     agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
-                    agent.context_manager.add_message("system", observation)
+                    agent.context_manager.add_message("system", f"[Hasil {tool_name}]:\n{result}")
 
-                elif intent_bypass["type"] == "multi_step":
-                    for step in intent_bypass.get("steps", []):
+                elif action["type"] == "multi_step":
+                    for step in action.get("steps", []):
                         tool_name = step.get("tool", "")
                         params = step.get("params", {})
                         start_time = time.time()
@@ -443,7 +453,7 @@ async def api_chat_stream(session_id: str, request: Request):
                     agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
                     agent.context_manager.add_message("system", "\n".join(all_results))
 
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun ringkasan...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'synthesizing', 'content': 'Creating final response...'})}\n\n"
                 context = agent.context_manager.get_context_window()
                 summary_prompt = agent._build_llm_prompt(context)
                 summary_prompt += "\n\n[System]: Berikan ringkasan singkat hasil tool. Respons sebagai teks biasa."
@@ -456,11 +466,22 @@ async def api_chat_stream(session_id: str, request: Request):
                     for ci in range(0, len(fallback_text), 3):
                         yield f"data: {json.dumps({'type': 'chunk', 'content': fallback_text[ci:ci+3]})}\n\n"
 
-            if not skip_llm_loop:
+            else:
+                if plan_result and "goal" in plan_result and "steps" in plan_result:
+                    current_goal = plan_result["goal"]
+                    current_plan_steps = list(plan_result["steps"])
+                    yield f"data: {json.dumps({'type': 'plan', 'goal': current_goal, 'steps': current_plan_steps})}\n\n"
+                    plan_msg = f"Plan: {current_goal}\n"
+                    for i, step in enumerate(current_plan_steps, 1):
+                        plan_msg += f"  {i}. {step}\n"
+                    agent.context_manager.add_message("assistant", plan_msg)
+
+                yield f"data: {json.dumps({'type': 'phase', 'phase': 'executing', 'content': 'Starting execution...'})}\n\n"
+
                 for iteration in range(max_iterations):
                     agent.iteration_count = iteration + 1
 
-                    yield f"data: {json.dumps({'type': 'status', 'content': 'Menganalisis...'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'executing', 'content': f'Running step {iteration + 1}...'})}\n\n"
 
                     context = agent.context_manager.get_context_window()
                     llm_input = agent._build_llm_prompt(context)
@@ -473,7 +494,26 @@ async def api_chat_stream(session_id: str, request: Request):
 
                     action = agent._parse_llm_response(raw_response, user_input=user_message)
 
-                    if action["type"] == "respond":
+                    if action["type"] == "plan":
+                        plan_goal = action.get("goal", current_goal)
+                        plan_steps = action.get("steps", [])
+                        if plan_steps:
+                            current_goal = plan_goal
+                            current_plan_steps = list(plan_steps)
+                            yield f"data: {json.dumps({'type': 'plan', 'goal': current_goal, 'steps': current_plan_steps})}\n\n"
+                            plan_msg = f"Plan: {current_goal}\n"
+                            for i, step in enumerate(current_plan_steps, 1):
+                                plan_msg += f"  {i}. {step}\n"
+                            agent.context_manager.add_message("assistant", plan_msg)
+                        continue
+
+                    elif action["type"] == "think":
+                        thought = action.get("thought", "")
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': thought})}\n\n"
+                        agent.context_manager.add_message("assistant", f"Thinking: {thought}")
+                        continue
+
+                    elif action["type"] == "respond":
                         final_response = action["message"]
                         for char_idx in range(0, len(final_response), 3):
                             text_chunk = final_response[char_idx:char_idx+3]
@@ -507,6 +547,28 @@ async def api_chat_stream(session_id: str, request: Request):
                         agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
                         agent.context_manager.add_message("system", observation)
 
+                        yield f"data: {json.dumps({'type': 'phase', 'phase': 'reflecting', 'content': 'Analyzing results...'})}\n\n"
+
+                        completed_step = f"Used {tool_name} with params {json.dumps(params)}"
+                        remaining = current_plan_steps[iteration + 1:] if current_plan_steps else []
+                        try:
+                            reflection = await agent._reflect_on_result(current_goal, completed_step, result, remaining)
+                            if reflection.get("type") == "think":
+                                thought = reflection.get("thought", "")
+                                yield f"data: {json.dumps({'type': 'thinking', 'content': thought})}\n\n"
+                                agent.context_manager.add_message("assistant", f"Reflection: {thought}")
+                            elif reflection.get("type") == "respond":
+                                final_response = reflection.get("message", "")
+                                for char_idx in range(0, len(final_response), 3):
+                                    text_chunk = final_response[char_idx:char_idx+3]
+                                    yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
+                                    await asyncio.sleep(0.01)
+                                break
+                            elif reflection.get("type") == "use_tool":
+                                agent.context_manager.add_message("system", f"[Reflection]: Next action determined - use {reflection.get('tool', 'unknown')}")
+                        except Exception as ref_err:
+                            logger.warning(f"Reflection failed: {ref_err}")
+
                     elif action["type"] == "multi_step":
                         for step in action.get("steps", []):
                             tool_name = step.get("tool", "")
@@ -539,7 +601,7 @@ async def api_chat_stream(session_id: str, request: Request):
                         yield f"data: {json.dumps({'type': 'chunk', 'content': final_response})}\n\n"
                         break
                 else:
-                    yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun jawaban akhir...'})}\n\n"
+                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'synthesizing', 'content': 'Creating final response...'})}\n\n"
                     context = agent.context_manager.get_context_window()
                     prompt = agent._build_llm_prompt(context)
                     prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
@@ -548,11 +610,34 @@ async def api_chat_stream(session_id: str, request: Request):
                         final_response += chunk
                         yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
 
-            if not final_response and raw_response:
-                final_response = raw_response
-                for ci in range(0, len(final_response), 3):
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
-                    await asyncio.sleep(0.01)
+                if not final_response and raw_response:
+                    final_response = raw_response
+                    for ci in range(0, len(final_response), 3):
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
+                        await asyncio.sleep(0.01)
+
+                if not final_response:
+                    intent_fallback = detect_intent(user_message)
+                    if intent_fallback:
+                        logger.info(f"Fallback to intent detection: {intent_fallback['type']}")
+                        yield f"data: {json.dumps({'type': 'status', 'content': 'Using fallback intent detection...'})}\n\n"
+                        if intent_fallback["type"] == "use_tool":
+                            tool_name = intent_fallback["tool"]
+                            params = intent_fallback.get("params", {})
+                            start_time = time.time()
+                            yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+                            result = await agent._execute_tool(tool_name, params)
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            tool_exec = {
+                                "tool": tool_name, "params": params,
+                                "result": result[:2000], "duration_ms": duration_ms, "status": "success"
+                            }
+                            tool_executions.append(tool_exec)
+                            log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                            final_response = f"Tool {tool_name} executed.\n\nResult:\n{result[:3000]}"
+                            for ci in range(0, len(final_response), 3):
+                                yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
 
             add_message(session_id, "assistant", final_response, {"tool_executions": tool_executions})
 
