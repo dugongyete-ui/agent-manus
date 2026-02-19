@@ -56,12 +56,14 @@ class GenerateTool:
             f"Gunakan metode generate() untuk membuat media."
         )
 
-    async def generate(self, media_type: str, prompt: str, options: Optional[dict] = None) -> dict:
+    async def generate(self, media_type: str, prompt: str, options: Optional[dict] = None, **kwargs) -> dict:
         if media_type not in self.SUPPORTED_TYPES:
             return {"success": False, "error": f"Tipe tidak didukung: {media_type}. Gunakan: {self.SUPPORTED_TYPES}"}
 
         logger.info(f"Generasi {media_type}: '{prompt[:100]}'")
         options = options or {}
+        if kwargs:
+            options.update(kwargs)
 
         generators = {
             "image": self._generate_image,

@@ -2,6 +2,7 @@
 
 import json
 import logging
+import os
 import time
 from typing import Any, Optional
 
@@ -16,41 +17,66 @@ from agent_core.security_manager import SecurityManager
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang membantu pengguna menyelesaikan tugas.
+SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang WAJIB menggunakan tools untuk menyelesaikan tugas pengguna.
+Kamu BUKAN chatbot biasa. Kamu adalah AGEN EKSEKUSI. Kamu HARUS menjalankan tools secara langsung.
+Kamu memiliki akses penuh ke semua tools dan BISA menjalankannya secara nyata di server.
 
-Kamu memiliki akses ke alat-alat berikut:
-1. **shell_tool** - Menjalankan perintah shell/terminal (ls, cat, grep, python3, node, pip, npm, dll). Mendukung run_code untuk eksekusi kode langsung.
-2. **file_tool** - Operasi file: read, write, edit, append, view, list, delete, copy, move. Juga analyze_file untuk analisis dokumen (PDF, gambar, audio, kode, data).
-3. **browser_tool** - Navigasi web dengan Playwright: navigate, screenshot, click, fill_form, type_text, extract_text, extract_links, execute_javascript, scroll, go_back, go_forward, wait_for_element
-4. **search_tool** - Pencarian web via DuckDuckGo. Juga bisa fetch halaman web: fetch_page_content
-5. **generate_tool** - Generasi media (gambar, SVG, chart, audio, video, dokumen)
-6. **slides_tool** - Pembuatan presentasi
-7. **webdev_tool** - Scaffolding proyek web (React, Vue, Flask, Express, Next.js, FastAPI). Mendukung install_dependencies, add_dependency, build_project
-8. **schedule_tool** - Penjadwalan & otomatisasi tugas: interval, cron, dan one-time. Operasi: create, create_cron, create_once, cancel, pause, resume, list, status, history, stats
-9. **message_tool** - Komunikasi dengan pengguna
-10. **skill_manager** - Manajemen skill modular: list, info, create, update, delete, run_script, search, reload
+ATURAN UTAMA:
+- SELALU respons dalam format JSON MURNI, TANPA teks tambahan di luar JSON.
+- JANGAN PERNAH bilang "saya tidak bisa menjalankan tool" atau "akses eksekusi tool dimatikan" - itu SALAH. Tools AKTIF dan SIAP dijalankan.
+- JANGAN PERNAH hanya mendeskripsikan tools tanpa menggunakannya.
+- Jika pengguna meminta sesuatu yang bisa dikerjakan dengan tool, LANGSUNG gunakan tool tersebut.
+- Jika diminta "coba jalankan semua tools", jalankan satu per satu dengan multi_step.
 
-Saat pengguna meminta sesuatu, analisis kebutuhannya dan tentukan alat yang tepat.
-Respons dalam format JSON berikut:
+DAFTAR TOOLS YANG AKTIF:
+1. shell_tool - Eksekusi perintah terminal: ls, cat, grep, python3, node, pip, npm, curl, wget, dll.
+2. file_tool - Operasi file: read, write, edit, append, view, list, delete, copy, move, analyze, search, info.
+3. browser_tool - Browser web otomatis: navigate, screenshot, click, fill, type, extract_text, extract_links, execute_js, scroll, go_back, go_forward, wait_for.
+4. search_tool - Pencarian web DuckDuckGo + fetch halaman web.
+5. generate_tool - Generasi media: image, svg, chart, audio, video, document.
+6. slides_tool - Buat dan export presentasi ke HTML.
+7. webdev_tool - Scaffolding proyek web: React, Vue, Flask, Express, Next.js, FastAPI.
+8. schedule_tool - Penjadwalan tugas: interval, cron, one-time.
+9. message_tool - Kirim pesan/notifikasi ke pengguna.
+10. skill_manager - Manajemen skill modular: list, info, create, update, delete, run_script, search, reload.
 
-Jika perlu menggunakan alat:
+FORMAT RESPONS (WAJIB JSON MURNI):
+
+Menggunakan satu tool:
 {"action": "use_tool", "tool": "nama_tool", "params": {"key": "value"}, "reasoning": "alasan singkat"}
 
-Jika bisa menjawab langsung tanpa alat:
-{"action": "respond", "message": "respons kamu", "reasoning": "alasan singkat"}
+Menjawab langsung (HANYA jika tidak perlu tool):
+{"action": "respond", "message": "jawaban kamu di sini", "reasoning": "alasan"}
 
-Jika perlu beberapa langkah:
-{"action": "multi_step", "steps": [{"tool": "nama_tool", "params": {"key": "value"}}], "reasoning": "alasan"}
+Menggunakan beberapa tools berurutan:
+{"action": "multi_step", "steps": [{"tool": "tool1", "params": {}}, {"tool": "tool2", "params": {}}], "reasoning": "alasan"}
 
-Parameter yang tersedia untuk setiap tool:
+PARAMETER TOOLS:
 - shell_tool: {"command": "perintah"} atau {"action": "run_code", "code": "kode", "runtime": "python3|node|bash"}
-- file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move|analyze", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "teks lama", "new_text": "teks baru", "start_line": 1, "end_line": 10}
-- browser_tool: {"action": "navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll|go_back|wait_for", "url": "url", "selector": "css_selector", "value": "nilai", "script": "js_code", "direction": "up|down|top|bottom", "path": "screenshot.png"}
+- file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move|analyze|search|info", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "lama", "new_text": "baru", "start_line": 1, "end_line": 10, "pattern": "*.py", "directory": "."}
+- browser_tool: {"action": "navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll|go_back|go_forward|wait_for", "url": "url", "selector": "css", "value": "nilai", "script": "js", "direction": "up|down|top|bottom", "path": "file.png", "full_page": false}
 - search_tool: {"query": "kata kunci"} atau {"action": "fetch", "url": "url"}
-- webdev_tool: {"action": "init|install_deps|add_dep|build", "name": "nama", "framework": "react|vue|flask|express|nextjs|fastapi", "packages": ["pkg1"], "project_dir": "dir"}
-- schedule_tool: {"action": "create|create_cron|create_once|cancel|pause|resume|list|status|history|stats", "name": "nama", "interval": 60, "cron_expression": "*/5 * * * *", "delay_seconds": 300, "callback": "default", "task_id": "sched_1"}
-- skill_manager: {"action": "list|info|create|update|delete|run_script|search|reload", "name": "nama_skill", "description": "deskripsi", "capabilities": ["cap1"], "script": "nama_script", "args": {}, "query": "kata kunci"}
-- message_tool: {"content": "pesan", "type": "info|warning|success|error"}
+- generate_tool: {"type": "image|svg|chart|audio|video|document", "prompt": "deskripsi", "width": 1024, "height": 1024, "style": "natural|abstract|modern", "duration": 5, "format": "png|svg|wav|mp4", "chart_type": "bar|pie|line", "data": {"labels": [], "values": []}}
+- slides_tool: {"action": "create|add_slide|export|list", "title": "judul", "content": "isi", "layout": "title|title_content", "author": "nama", "theme": "modern|dark|light", "slides": [{"title": "t", "content": "c"}]}
+- webdev_tool: {"action": "init|install_deps|add_dep|build|list_frameworks", "name": "nama", "framework": "react|vue|flask|express|nextjs|fastapi", "packages": ["pkg"], "project_dir": "dir"}
+- schedule_tool: {"action": "create|create_cron|create_once|cancel|pause|resume|list|status|history|stats", "name": "nama", "interval": 60, "cron_expression": "*/5 * * * *", "delay_seconds": 300, "callback": "default", "task_id": "id"}
+- skill_manager: {"action": "list|info|create|update|delete|run_script|search|reload", "name": "skill", "description": "desc", "capabilities": ["cap"], "script": "script", "args": {}, "query": "kata"}
+- message_tool: {"content": "pesan", "type": "info|warning|success|error|question|progress"}
+
+CONTOH INTERAKSI:
+User: "Tampilkan daftar file di direktori saat ini"
+Response: {"action": "use_tool", "tool": "shell_tool", "params": {"command": "ls -la"}, "reasoning": "Menampilkan daftar file"}
+
+User: "Cari informasi tentang Python"
+Response: {"action": "use_tool", "tool": "search_tool", "params": {"query": "Python programming language"}, "reasoning": "Mencari info tentang Python"}
+
+User: "Buat gambar sunset"
+Response: {"action": "use_tool", "tool": "generate_tool", "params": {"type": "image", "prompt": "beautiful sunset over ocean", "width": 1024, "height": 768, "style": "natural"}, "reasoning": "Membuat gambar sunset"}
+
+User: "Buka google.com"
+Response: {"action": "use_tool", "tool": "browser_tool", "params": {"action": "navigate", "url": "https://www.google.com"}, "reasoning": "Membuka Google"}
+
+INGAT: SELALU output JSON MURNI. JANGAN tambahkan teks apapun sebelum atau sesudah JSON. JANGAN gunakan markdown code blocks. LANGSUNG tulis JSON.
 """
 
 
@@ -252,13 +278,51 @@ class AgentLoop:
             elif tool_name == "generate_tool":
                 media_type = params.get("type", "image")
                 prompt = params.get("prompt", "")
-                gen_result = await tool.generate(media_type, prompt)
-                result = gen_result.get("message", str(gen_result))
+                gen_params = {k: v for k, v in params.items() if k not in ("type", "prompt")}
+                gen_result = await tool.generate(media_type, prompt, **gen_params)
+                if isinstance(gen_result, dict):
+                    result = gen_result.get("message", json.dumps(gen_result, ensure_ascii=False))
+                else:
+                    result = str(gen_result)
 
             elif tool_name == "slides_tool":
-                title = params.get("title", "Presentasi")
-                pres = tool.create_presentation(title)
-                result = f"Presentasi '{title}' dibuat."
+                action = params.get("action", "create")
+                if action == "create":
+                    title = params.get("title", "Presentasi")
+                    slides_data = params.get("slides", [])
+                    author = params.get("author", "Manus Agent")
+                    theme = params.get("theme", "modern")
+                    pres = tool.create_presentation(title, author=author)
+                    for slide_data in slides_data:
+                        s_title = slide_data.get("title", "")
+                        s_content = slide_data.get("content", "")
+                        s_layout = slide_data.get("layout", "title_content")
+                        tool.add_slide(pres, s_title, s_content, s_layout)
+                    result = f"Presentasi '{title}' dibuat dengan {len(slides_data)} slide."
+                elif action == "add_slide":
+                    s_title = params.get("title", "Slide")
+                    s_content = params.get("content", "")
+                    s_layout = params.get("layout", "title_content")
+                    result = f"Slide '{s_title}' ditambahkan."
+                elif action == "export":
+                    title = params.get("title", "Presentasi")
+                    fmt = params.get("format", "html")
+                    if hasattr(tool, 'export_html'):
+                        export_result = tool.export_html(title)
+                        result = export_result if isinstance(export_result, str) else json.dumps(export_result, ensure_ascii=False)
+                    elif hasattr(tool, 'export_presentation'):
+                        export_result = tool.export_presentation(title, fmt)
+                        result = export_result if isinstance(export_result, str) else json.dumps(export_result, ensure_ascii=False)
+                    else:
+                        result = f"Presentasi '{title}' di-export."
+                elif action == "list":
+                    if hasattr(tool, 'list_presentations'):
+                        presentations = tool.list_presentations()
+                        result = json.dumps(presentations, ensure_ascii=False)
+                    else:
+                        result = "Daftar presentasi kosong."
+                else:
+                    result = f"Aksi slides tidak dikenal: {action}"
 
             elif tool_name == "schedule_tool":
                 result = await tool.execute(params)
@@ -427,6 +491,30 @@ class AgentLoop:
             if not dest:
                 return "Tujuan move tidak diberikan."
             return tool.move_file(path, dest)
+        elif operation == "analyze":
+            if hasattr(tool, 'analyze_file'):
+                r = tool.analyze_file(path)
+                return json.dumps(r, ensure_ascii=False, default=str) if isinstance(r, dict) else str(r)
+            return tool.read_file(path)
+        elif operation == "search":
+            pattern = params.get("pattern", "*")
+            directory = params.get("directory", path or ".")
+            if hasattr(tool, 'search_files'):
+                results = tool.search_files(directory, pattern)
+                return "\n".join(results) if isinstance(results, list) else str(results)
+            import glob as glob_mod
+            matches = glob_mod.glob(os.path.join(directory, "**", pattern), recursive=True)
+            return "\n".join(matches[:50]) if matches else "Tidak ditemukan file yang cocok."
+        elif operation == "info":
+            if hasattr(tool, 'get_file_info'):
+                r = tool.get_file_info(path)
+                return json.dumps(r, ensure_ascii=False, default=str) if isinstance(r, dict) else str(r)
+            import os as os_mod
+            try:
+                stat = os_mod.stat(path)
+                return json.dumps({"path": path, "size": stat.st_size, "modified": stat.st_mtime, "exists": True}, ensure_ascii=False)
+            except FileNotFoundError:
+                return json.dumps({"path": path, "exists": False})
         else:
             return f"Operasi file tidak dikenal: {operation}"
 
@@ -446,33 +534,46 @@ class AgentLoop:
     def _parse_llm_response(self, raw: str) -> dict:
         raw = raw.strip()
 
-        json_str = None
+        json_candidates = []
+
         if "```json" in raw:
             start = raw.index("```json") + 7
-            end = raw.index("```", start) if "```" in raw[start:] else len(raw)
-            json_str = raw[start:end].strip()
-        elif "```" in raw:
+            rest = raw[start:]
+            end = rest.find("```")
+            if end == -1:
+                end = len(rest)
+            json_candidates.append(rest[:end].strip())
+        if "```" in raw and not json_candidates:
             start = raw.index("```") + 3
-            end = raw.index("```", start) if "```" in raw[start:] else len(raw)
-            json_str = raw[start:end].strip()
-        elif raw.startswith("{"):
+            rest = raw[start:]
+            end = rest.find("```")
+            if end == -1:
+                end = len(rest)
+            candidate = rest[:end].strip()
+            if candidate.startswith("{"):
+                json_candidates.append(candidate)
+
+        first_brace = raw.find("{")
+        if first_brace != -1:
             brace_count = 0
             end_idx = 0
-            for i, ch in enumerate(raw):
-                if ch == '{':
+            for i in range(first_brace, len(raw)):
+                if raw[i] == '{':
                     brace_count += 1
-                elif ch == '}':
+                elif raw[i] == '}':
                     brace_count -= 1
                     if brace_count == 0:
                         end_idx = i + 1
                         break
             if end_idx > 0:
-                json_str = raw[:end_idx]
+                json_candidates.append(raw[first_brace:end_idx])
 
-        if json_str:
+        for json_str in json_candidates:
             try:
                 parsed = json.loads(json_str)
-                action = parsed.get("action", "respond")
+                if not isinstance(parsed, dict):
+                    continue
+                action = parsed.get("action", "")
 
                 if action == "use_tool":
                     return {
@@ -490,8 +591,37 @@ class AgentLoop:
                         "type": "respond",
                         "message": parsed.get("message", raw),
                     }
-            except json.JSONDecodeError:
-                pass
+                elif "tool" in parsed and "params" in parsed:
+                    return {
+                        "type": "use_tool",
+                        "tool": parsed.get("tool", ""),
+                        "params": parsed.get("params", {}),
+                    }
+                elif "steps" in parsed and isinstance(parsed["steps"], list):
+                    return {
+                        "type": "multi_step",
+                        "steps": parsed["steps"],
+                    }
+                elif "message" in parsed:
+                    return {
+                        "type": "respond",
+                        "message": parsed["message"],
+                    }
+            except (json.JSONDecodeError, ValueError):
+                continue
+
+        import re
+        tool_pattern = re.search(
+            r'(?:menggunakan|gunakan|use|call|jalankan|run)\s+(shell_tool|file_tool|browser_tool|search_tool|generate_tool|slides_tool|webdev_tool|schedule_tool|message_tool|skill_manager)',
+            raw, re.IGNORECASE
+        )
+        if tool_pattern:
+            tool_name = tool_pattern.group(1).lower()
+            return {
+                "type": "use_tool",
+                "tool": tool_name,
+                "params": {},
+            }
 
         return {"type": "respond", "message": raw}
 
