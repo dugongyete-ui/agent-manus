@@ -1,0 +1,13 @@
+{
+  "name": "system_monitor",
+  "description": "Memantau kondisi sistem - CPU, memori, disk, dan proses",
+  "capabilities": [
+    "Memeriksa penggunaan memori",
+    "Memeriksa penggunaan disk",
+    "Mendaftar proses aktif",
+    "Informasi sistem operasi",
+    "Memantau uptime"
+  ],
+  "version": "1.0.0",
+  "author": "Manus Agent"
+}

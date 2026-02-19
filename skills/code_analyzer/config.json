@@ -1,0 +1,13 @@
+{
+  "name": "code_analyzer",
+  "description": "Menganalisis kode sumber - statistik, pola, dan kualitas kode",
+  "capabilities": [
+    "Menghitung statistik kode (baris, fungsi, kelas)",
+    "Mendeteksi bahasa pemrograman",
+    "Menganalisis kompleksitas kode",
+    "Mencari anti-pattern",
+    "Menghitung rasio komentar"
+  ],
+  "version": "1.0.0",
+  "author": "Manus Agent"
+}

@@ -9,6 +9,7 @@ from tools.slides_tool import SlidesTool
 from tools.webdev_tool import WebDevTool
 from tools.schedule_tool import ScheduleTool
 from tools.message_tool import MessageTool
+from tools.skill_manager import SkillManager
 
 __all__ = [
     "ShellTool",
@@ -20,4 +21,5 @@ __all__ = [
     "WebDevTool",
     "ScheduleTool",
     "MessageTool",
+    "SkillManager",
 ]
