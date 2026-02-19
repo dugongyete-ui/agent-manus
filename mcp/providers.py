@@ -590,22 +590,61 @@ class CustomProvider(MCPProvider):
 
     async def complete(self, request: MCPRequest) -> MCPResponse:
         start = time.time()
-        endpoint = self.config.capabilities.get("endpoint", "/chat")
-        url = f"{self.config.api_base}{endpoint}"
+        stream_endpoint = self.config.capabilities.get("stream_endpoint", self.config.capabilities.get("endpoint", "/stream"))
+        url = f"{self.config.api_base}{stream_endpoint}"
         payload = {
             "text": request.messages[-1].content if request.messages else "",
             "model": request.model or self.config.default_model,
             "provider": self.config.capabilities.get("provider_param", self.config.name),
-            "messages": self.format_messages(request.messages),
         }
 
-        raw = await self._request_with_retry(url, payload)
-        duration = int((time.time() - start) * 1000)
-        message = self.parse_response(raw)
+        content_parts = []
+        try:
+            async for line in self._stream_request(url, payload):
+                if line.startswith("data: "):
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        break
+                    try:
+                        parsed = json.loads(data_str)
+                        if isinstance(parsed, str):
+                            content_parts.append(parsed)
+                        elif isinstance(parsed, dict):
+                            chunk_text = parsed.get("content") or parsed.get("text") or parsed.get("message", "")
+                            if isinstance(chunk_text, dict):
+                                chunk_text = json.dumps(chunk_text, ensure_ascii=False)
+                            if chunk_text:
+                                content_parts.append(str(chunk_text))
+                        elif parsed is not None:
+                            content_parts.append(str(parsed))
+                    except json.JSONDecodeError:
+                        if data_str.strip():
+                            content_parts.append(data_str)
+        except Exception as e:
+            duration = int((time.time() - start) * 1000)
+            if content_parts:
+                pass
+            else:
+                return MCPResponse(
+                    status=MCPStatus.ERROR, error=str(e),
+                    model=request.model or self.config.default_model,
+                    provider=self.config.name, duration_ms=duration,
+                    request_id=request.request_id,
+                )
 
+        duration = int((time.time() - start) * 1000)
+        full_content = "".join(content_parts).strip()
+        if not full_content:
+            return MCPResponse(
+                status=MCPStatus.ERROR, error="Empty response from provider",
+                model=request.model or self.config.default_model,
+                provider=self.config.name, duration_ms=duration,
+                request_id=request.request_id,
+            )
+
+        message = MCPMessage(role=MCPRole.ASSISTANT, content=full_content, message_type=MCPMessageType.TEXT)
         return MCPResponse(
-            message=message,
-            status=MCPStatus.OK if message.message_type != MCPMessageType.ERROR else MCPStatus.ERROR,
+            message=message, status=MCPStatus.OK,
             model=request.model or self.config.default_model,
             provider=self.config.name, duration_ms=duration,
             request_id=request.request_id,
@@ -622,20 +661,23 @@ class CustomProvider(MCPProvider):
 
         async for line in self._stream_request(url, payload):
             if line.startswith("data: "):
-                data_str = line[6:]
+                data_str = line[6:].strip()
                 if data_str == "[DONE]":
                     yield MCPStreamChunk(finish_reason="stop")
                     return
                 try:
-                    data = json.loads(data_str)
-                    content = data.get("content") or data.get("text") or data.get("message", "")
-                    if isinstance(content, dict):
-                        content = json.dumps(content, ensure_ascii=False)
-                    yield MCPStreamChunk(content=str(content), delta_type="text")
+                    parsed = json.loads(data_str)
+                    if isinstance(parsed, str):
+                        yield MCPStreamChunk(content=parsed, delta_type="text")
+                    elif isinstance(parsed, dict):
+                        content = parsed.get("content") or parsed.get("text") or parsed.get("message", "")
+                        if isinstance(content, dict):
+                            content = json.dumps(content, ensure_ascii=False)
+                        yield MCPStreamChunk(content=str(content), delta_type="text")
+                    elif parsed is not None:
+                        yield MCPStreamChunk(content=str(parsed), delta_type="text")
                 except json.JSONDecodeError:
                     yield MCPStreamChunk(content=data_str, delta_type="text")
-            else:
-                yield MCPStreamChunk(content=line, delta_type="text")
 
 
 PROVIDER_MAP = {

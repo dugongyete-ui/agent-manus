@@ -6,12 +6,96 @@
       "action_context": "execution",
       "reward": 1.2,
       "timestamp": 1771493802.4485345
+    },
+    {
+      "tool_name": "search_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509518.8819215
+    },
+    {
+      "tool_name": "shell_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509589.2590709
+    },
+    {
+      "tool_name": "shell_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509635.9226425
+    },
+    {
+      "tool_name": "shell_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509662.9809284
+    },
+    {
+      "tool_name": "shell_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509948.4638898
+    },
+    {
+      "tool_name": "file_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509958.6461425
+    },
+    {
+      "tool_name": "search_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509962.0682864
+    },
+    {
+      "tool_name": "browser_tool",
+      "action_context": "execution",
+      "reward": 1.0,
+      "timestamp": 1771509987.6084146
+    },
+    {
+      "tool_name": "generate_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509994.7709324
+    },
+    {
+      "tool_name": "slides_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771509998.0624557
+    },
+    {
+      "tool_name": "webdev_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510010.5151591
+    },
+    {
+      "tool_name": "schedule_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510013.3005397
+    },
+    {
+      "tool_name": "message_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510020.6828687
+    },
+    {
+      "tool_name": "skill_manager",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510023.0643764
     }
   ],
   "quality_scores": [],
   "metadata": {
-    "last_updated": 1771493802.4488802,
+    "last_updated": 1771510023.0644934,
     "total_feedback": 0,
-    "total_rewards": 1
+    "total_rewards": 15
   }
 }

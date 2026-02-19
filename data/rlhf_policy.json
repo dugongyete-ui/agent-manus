@@ -2,6 +2,123 @@
   "policies": {
     "search_tool": {
       "tool_name": "search_tool",
+      "total_reward": 3.6,
+      "usage_count": 3,
+      "success_count": 3,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.06,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.7884
+      }
+    },
+    "shell_tool": {
+      "tool_name": "shell_tool",
+      "total_reward": 4.8,
+      "usage_count": 4,
+      "success_count": 4,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.08,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.9119
+      }
+    },
+    "file_tool": {
+      "tool_name": "file_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "browser_tool": {
+      "tool_name": "browser_tool",
+      "total_reward": 1.0,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.0,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.3
+      }
+    },
+    "generate_tool": {
+      "tool_name": "generate_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "slides_tool": {
+      "tool_name": "slides_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "webdev_tool": {
+      "tool_name": "webdev_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "schedule_tool": {
+      "tool_name": "schedule_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "message_tool": {
+      "tool_name": "message_tool",
+      "total_reward": 1.2,
+      "usage_count": 1,
+      "success_count": 1,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.02,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.36
+      }
+    },
+    "skill_manager": {
+      "tool_name": "skill_manager",
       "total_reward": 1.2,
       "usage_count": 1,
       "success_count": 1,
@@ -15,7 +132,7 @@
     }
   },
   "metadata": {
-    "last_updated": 1771493802.449335,
+    "last_updated": 1771510023.0650058,
     "learning_rate": 0.1,
     "exploration_rate": 0.15
   }

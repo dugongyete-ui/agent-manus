@@ -172,8 +172,17 @@ def _build_file_params(m):
     return {"operation": "write", "path": path, "content": content}
 
 
+_QUESTION_PATTERNS = re.compile(
+    r"^\s*(?:apa|siapa|dimana|kapan|kenapa|mengapa|bagaimana|berapa|apakah|what|who|where|when|why|how|which|can you|could you|do you|are you|is there|tolong jelaskan|jelaskan|explain)\b",
+    re.IGNORECASE,
+)
+
 def detect_intent(user_input: str) -> Optional[dict]:
     text = user_input.strip()
+    if len(text) < 3:
+        return None
+    if _QUESTION_PATTERNS.search(text):
+        return None
     for rule in INTENT_PATTERNS:
         for pattern in rule["patterns"]:
             match = re.search(pattern, text, re.IGNORECASE)
@@ -185,9 +194,11 @@ def detect_intent(user_input: str) -> Optional[dict]:
                     params = rule["build_params"](match)
                 except Exception:
                     continue
-                if params:
-                    logger.info(f"Intent terdeteksi: {tool} dari '{text[:60]}' -> {params}")
-                    return {"type": "use_tool", "tool": tool, "params": params}
+                param_values = [str(v).strip() for v in params.values() if isinstance(v, str)]
+                if not params or all(len(v) == 0 for v in param_values):
+                    continue
+                logger.info(f"Intent terdeteksi: {tool} dari '{text[:60]}' -> {params}")
+                return {"type": "use_tool", "tool": tool, "params": params}
     return None
 
 

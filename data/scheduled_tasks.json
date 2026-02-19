@@ -1,0 +1,29 @@
+{
+  "counter": 1,
+  "tasks": {
+    "sched_1": {
+      "task_id": "sched_1",
+      "name": "tugas backup harian",
+      "type": "interval",
+      "callback": "default",
+      "interval": 60,
+      "cron_expression": "",
+      "run_at": 0,
+      "description": "",
+      "max_runs": 0,
+      "enabled": true,
+      "status": "active",
+      "last_run": null,
+      "next_run": 1771510073.2738514,
+      "run_count": 0,
+      "error_count": 0,
+      "last_result": "",
+      "last_error": "",
+      "created_at": 1771510013.2738488,
+      "notify_on_complete": true,
+      "notify_on_error": true,
+      "history_count": 0,
+      "history": []
+    }
+  }
+}
