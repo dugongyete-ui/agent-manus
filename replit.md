@@ -8,6 +8,20 @@ The codebase is primarily in Indonesian (variable names, comments, log messages)
 
 ## Recent Changes
 
+- **2026-02-19**: Wave 4 Phase 10 completed - Security & Compliance:
+  - `agent_core/security_manager.py`: SecurityManager with command blocklist validation, path access control, rate limiting, and audit logging
+  - `agent_core/access_control.py`: RBAC system with admin/user/viewer roles, permissions, session management
+  - `agent_core/data_privacy.py`: DataPrivacyManager with PII detection (5 patterns), GDPR compliance checks, consent records, data encryption
+  - Security integrated into agent_loop.py: command/path validation before tool execution
+  - UI Security tab: audit grade/score, findings, events, RBAC stats, privacy compliance
+  - API endpoints: `/api/security/audit`, `/api/security/events`, `/api/security/rbac/*`, `/api/security/privacy/*`
+- **2026-02-19**: Wave 4 Phase 9 completed - Self-Improvement & Learning:
+  - `agent_core/rlhf_engine.py`: RLHFEngine for human feedback collection, tool reward tracking, satisfaction scoring, policy optimization
+  - `agent_core/meta_learner.py`: MetaLearner for execution pattern analysis, task classification, strategy optimization, performance monitoring
+  - Agent loop records tool outcomes to RLHF and execution patterns to MetaLearner
+  - Planner uses MetaLearner for strategy suggestions
+  - UI Learning tab: feedback stats, insights, tool performance bars, meta-learning status
+  - API endpoints: `/api/learning/stats`, `/api/learning/insights`, `/api/learning/meta/*`, `/api/learning/tool-preferences`
 - **2026-02-19**: Wave 4 Phase 8 completed - Skill management system:
   - `tools/skill_manager.py`: SkillManager class with dynamic skill discovery, loading, execution, listing, and use tracking
   - Enhanced `skills/skill_creator/scripts/create_skill.py` with improved templates and validation
@@ -44,6 +58,11 @@ Preferred communication style: Simple, everyday language.
 |   +-- planner.py                # Task plan creation and management
 |   +-- tool_selector.py          # Tool selection based on intent and keywords
 |   +-- user_manager.py           # User profile and preference management
+|   +-- rlhf_engine.py            # RLHF feedback & tool reward tracking
+|   +-- meta_learner.py           # Execution pattern analysis & strategy optimization
+|   +-- security_manager.py       # Command/path validation & audit logging
+|   +-- access_control.py         # RBAC with roles, permissions, sessions
+|   +-- data_privacy.py           # PII detection, GDPR compliance, consent management
 +-- tools/                        # Tool implementations callable by agent
 |   +-- __init__.py
 |   +-- shell_tool.py             # Shell commands with security + run_code()
@@ -100,7 +119,12 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Agent Core (`agent_core/`)
-- **AgentLoop** (`agent_loop.py`): Orchestrates the main loop with LLM-powered reasoning. Sends context to Dzeck AI API, parses JSON action responses, executes tools, and observes results iteratively. Max iterations: 10. Supports use_tool, multi_step, and respond actions. Registers 10 tools including schedule_tool and skill_manager.
+- **AgentLoop** (`agent_loop.py`): Orchestrates the main loop with LLM-powered reasoning. Sends context to Dzeck AI API, parses JSON action responses, executes tools, and observes results iteratively. Max iterations: 10. Supports use_tool, multi_step, and respond actions. Registers 10 tools including schedule_tool and skill_manager. Integrates RLHF (tool outcome recording), MetaLearner (execution pattern capture), and SecurityManager (command/path validation).
+- **RLHFEngine** (`rlhf_engine.py`): Human feedback loop with tool reward tracking, satisfaction scoring, trend analysis, and policy optimization.
+- **MetaLearner** (`meta_learner.py`): Execution pattern analysis, task type classification, strategy profile building, and performance monitoring.
+- **SecurityManager** (`security_manager.py`): Command blocklist validation, file path access control, rate limiting, and security audit scoring.
+- **AccessControl** (`access_control.py`): Role-based access control (admin/user/viewer), permissions management, session tracking, account lifecycle.
+- **DataPrivacyManager** (`data_privacy.py`): PII detection (email/phone/SSN/credit card/IP), GDPR compliance checks, consent management, data access logging, encryption status.
 - **LLMClient** (`llm_client.py`): Connects to Dzeck AI streaming API (SSE format). Supports streaming and non-streaming chat, system prompts, and multi-message context.
 - **ContextManager** (`context_manager.py`): Manages conversation history with token limits (128K), sliding memory window (20 messages), and auto-summarization (threshold: 15).
 - **KnowledgeBase** (`knowledge_base.py`): SQLite-based persistent memory. Stores knowledge entries (category/key/value), conversation summaries, and tool usage logs with statistics.
@@ -137,14 +161,17 @@ Preferred communication style: Simple, everyday language.
 ### Web UI (`web/`)
 - FastAPI server on port 5000 with Jinja2 templates
 - PostgreSQL-backed session/message/tool_execution persistence
-- Right panel tabs: Activity, Files, Tools, Schedule, Skills
+- Right panel tabs: Activity, Files, Tools, Schedule, Skills, Learning, Security
 - Schedule tab: stats display, task list with pause/resume/cancel controls
 - Skills tab: skill cards with capabilities, scripts, version, usage stats
-- REST API endpoints for all agent, session, schedule, and skill operations
+- Learning tab: feedback stats, insights, tool performance bars, meta-learning status
+- Security tab: audit grade/score, findings, events timeline, RBAC stats, privacy compliance
+- REST API endpoints for all agent, session, schedule, skill, learning, and security operations
 
 ### Key Design Patterns
 - **Async throughout**: All tools and agent loop use `async/await`.
-- **Safety-first**: Blocked commands/paths, execution timeouts, file size limits, dangerous pattern detection.
+- **Safety-first**: Blocked commands/paths, execution timeouts, file size limits, dangerous pattern detection, RBAC, PII detection.
+- **Self-improving**: RLHF feedback loop, meta-learning from execution patterns, strategy optimization.
 - **Modular tools**: Consistent interface, independently testable.
 - **Configuration-driven**: YAML/JSON config files control behavior.
 - **Auto-cleanup**: Browser and shell processes cleaned up on agent shutdown.
