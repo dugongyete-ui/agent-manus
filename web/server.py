@@ -63,6 +63,11 @@ from tools.generate_tool import GenerateTool
 from tools.slides_tool import SlidesTool
 from tools.schedule_tool import ScheduleTool
 from tools.skill_manager import SkillManager
+from tools.spreadsheet_tool import SpreadsheetTool
+from tools.playbook_manager import PlaybookManager
+from sandbox_env.vm_manager import VMManager, IsolationLevel
+from sandbox_env.shell_session import ShellSessionManager
+from monitoring.monitor import monitor as system_monitor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -110,8 +115,12 @@ def get_agent():
         agent_loop.register_tool("slides_tool", SlidesTool())
         schedule_tool = ScheduleTool()
         skill_manager = SkillManager()
+        spreadsheet_tool = SpreadsheetTool()
+        playbook_manager = PlaybookManager()
         agent_loop.register_tool("schedule_tool", schedule_tool)
         agent_loop.register_tool("skill_manager", skill_manager)
+        agent_loop.register_tool("spreadsheet_tool", spreadsheet_tool)
+        agent_loop.register_tool("playbook_manager", playbook_manager)
 
         message_tool = agent_loop._tool_instances.get("message_tool")
         if message_tool:
@@ -121,11 +130,16 @@ def get_agent():
 
     return agent_loop
 
+vm_manager = VMManager()
+shell_session_manager = ShellSessionManager()
+
 
 @app.on_event("startup")
 async def startup():
     init_database()
     get_agent()
+    system_monitor.health.register_check("database", lambda: init_database() or "OK", critical=True)
+    system_monitor.health.register_check("agent", lambda: "OK" if agent_loop else "not initialized")
     logger.info("Manus Agent Web Server started")
 
 
@@ -1280,6 +1294,399 @@ async def api_mcp_stream(request: Request):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/vm/list")
+async def api_vm_list(state: str = None):
+    return {"vms": vm_manager.list_vms(state_filter=state)}
+
+
+@app.post("/api/vm/create")
+async def api_vm_create(request: Request):
+    try:
+        body = await request.json()
+        isolation = None
+        if body.get("isolation_level"):
+            try:
+                isolation = IsolationLevel(body["isolation_level"])
+            except ValueError:
+                pass
+        result = vm_manager.create_vm(
+            name=body.get("name", "sandbox"),
+            runtime=body.get("runtime", "python3"),
+            isolation_level=isolation,
+            environment=body.get("environment"),
+            tags=body.get("tags"),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vm/{vm_id}/start")
+async def api_vm_start(vm_id: str):
+    return vm_manager.start_vm(vm_id)
+
+
+@app.post("/api/vm/{vm_id}/stop")
+async def api_vm_stop(vm_id: str):
+    return vm_manager.stop_vm(vm_id)
+
+
+@app.post("/api/vm/{vm_id}/execute")
+async def api_vm_execute(vm_id: str, request: Request):
+    try:
+        body = await request.json()
+        system_monitor.metrics.increment("vm.executions")
+        timer_id = system_monitor.performance.start_timer("vm_execute")
+        result = await vm_manager.execute_in_vm(vm_id, body.get("command", ""), body.get("timeout"))
+        system_monitor.performance.stop_timer(timer_id, {"vm_id": vm_id})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/vm/{vm_id}/execute_code")
+async def api_vm_execute_code(vm_id: str, request: Request):
+    try:
+        body = await request.json()
+        result = await vm_manager.execute_code_in_vm(vm_id, body.get("code", ""), body.get("runtime"), body.get("timeout"))
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/vm/{vm_id}")
+async def api_vm_get(vm_id: str):
+    vm = vm_manager.get_vm(vm_id)
+    if not vm:
+        raise HTTPException(status_code=404, detail="VM tidak ditemukan")
+    return vm
+
+
+@app.delete("/api/vm/{vm_id}")
+async def api_vm_destroy(vm_id: str):
+    return vm_manager.destroy_vm(vm_id)
+
+
+@app.post("/api/vm/{vm_id}/snapshot")
+async def api_vm_snapshot(vm_id: str, request: Request):
+    body = await request.json()
+    return vm_manager.create_snapshot(vm_id, body.get("name", "snapshot"), body.get("description", ""))
+
+
+@app.post("/api/vm/{vm_id}/restore/{snapshot_id}")
+async def api_vm_restore(vm_id: str, snapshot_id: str):
+    return vm_manager.restore_snapshot(vm_id, snapshot_id)
+
+
+@app.get("/api/vm/{vm_id}/logs")
+async def api_vm_logs(vm_id: str, limit: int = 50, level: str = None):
+    return vm_manager.get_vm_logs(vm_id, limit, level)
+
+
+@app.get("/api/vm/stats")
+async def api_vm_stats():
+    return vm_manager.get_stats()
+
+
+@app.post("/api/shell/create")
+async def api_shell_create(request: Request):
+    try:
+        body = await request.json()
+        result = await shell_session_manager.create_session(
+            working_dir=body.get("working_dir"),
+            env=body.get("env"),
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/shell/{session_id}/execute")
+async def api_shell_execute(session_id: str, request: Request):
+    try:
+        body = await request.json()
+        system_monitor.metrics.increment("shell.executions")
+        timer_id = system_monitor.performance.start_timer("shell_execute")
+        result = await shell_session_manager.execute_in_session(
+            session_id, body.get("command", ""), body.get("timeout", 120)
+        )
+        system_monitor.performance.stop_timer(timer_id, {"session_id": session_id})
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/shell/{session_id}/script")
+async def api_shell_script(session_id: str, request: Request):
+    try:
+        body = await request.json()
+        result = await shell_session_manager.execute_script_in_session(
+            session_id, body.get("code", ""), body.get("runtime", "bash"), body.get("timeout", 120)
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/shell/{session_id}")
+async def api_shell_get(session_id: str):
+    session = shell_session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sesi tidak ditemukan")
+    return session
+
+
+@app.get("/api/shell/{session_id}/history")
+async def api_shell_history(session_id: str, limit: int = 50):
+    return shell_session_manager.get_session_history(session_id, limit)
+
+
+@app.delete("/api/shell/{session_id}")
+async def api_shell_close(session_id: str):
+    return await shell_session_manager.close_session(session_id)
+
+
+@app.get("/api/shell/list")
+async def api_shell_list():
+    return {"sessions": shell_session_manager.list_sessions()}
+
+
+@app.get("/api/shell/stats")
+async def api_shell_stats():
+    return shell_session_manager.get_stats()
+
+
+@app.post("/api/spreadsheet/create")
+async def api_spreadsheet_create(request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("spreadsheet_tool")
+        if not tool:
+            raise HTTPException(status_code=500, detail="SpreadsheetTool tidak tersedia")
+        result = tool.create_spreadsheet(
+            name=body.get("name", "untitled"),
+            headers=body.get("headers", []),
+            data=body.get("data"),
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/spreadsheet/read")
+async def api_spreadsheet_read(request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("spreadsheet_tool")
+        if not tool:
+            raise HTTPException(status_code=500, detail="SpreadsheetTool tidak tersedia")
+        return tool.read_spreadsheet(body.get("file_path", ""), body.get("limit"), body.get("offset", 0))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/spreadsheet/stats")
+async def api_spreadsheet_stats(request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("spreadsheet_tool")
+        if not tool:
+            raise HTTPException(status_code=500, detail="SpreadsheetTool tidak tersedia")
+        return tool.get_statistics(body.get("file_path", ""), body.get("column"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/spreadsheet/filter")
+async def api_spreadsheet_filter(request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("spreadsheet_tool")
+        if not tool:
+            raise HTTPException(status_code=500, detail="SpreadsheetTool tidak tersedia")
+        return tool.filter_data(body.get("file_path", ""), body.get("column", ""), body.get("operator", "eq"), body.get("value", ""))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/playbook/list")
+async def api_playbook_list(category: str = None):
+    try:
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return {"playbooks": tool.list_playbooks(category=category)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/playbook/create")
+async def api_playbook_create(request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return tool.create_playbook(
+            name=body.get("name", ""),
+            description=body.get("description", ""),
+            category=body.get("category", "general"),
+            tags=body.get("tags"),
+            steps=body.get("steps"),
+            variables=body.get("variables"),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/playbook/{playbook_id}/execute")
+async def api_playbook_execute(playbook_id: str, request: Request):
+    try:
+        body = await request.json()
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return await tool.execute_playbook(playbook_id, variables=body.get("variables"), dry_run=body.get("dry_run", False))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/playbook/{playbook_id}")
+async def api_playbook_delete(playbook_id: str):
+    try:
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return tool.delete_playbook(playbook_id)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/playbook/stats")
+async def api_playbook_stats():
+    try:
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return tool.get_stats()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/playbook/patterns")
+async def api_playbook_patterns():
+    try:
+        agent = get_agent()
+        tool = agent._tool_instances.get("playbook_manager")
+        if not tool:
+            raise HTTPException(status_code=500, detail="PlaybookManager tidak tersedia")
+        return {"patterns": tool.detect_patterns()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/monitor/dashboard")
+async def api_monitor_dashboard():
+    return system_monitor.get_dashboard()
+
+
+@app.get("/api/monitor/health")
+async def api_monitor_health():
+    return await system_monitor.health.run_checks()
+
+
+@app.get("/api/monitor/performance")
+async def api_monitor_performance(operation: str = None):
+    return system_monitor.performance.get_stats(operation)
+
+
+@app.get("/api/monitor/performance/slow")
+async def api_monitor_slow_ops(threshold: float = 5.0, limit: int = 20):
+    return {"slow_operations": system_monitor.performance.get_slow_operations(threshold, limit)}
+
+
+@app.get("/api/monitor/requests")
+async def api_monitor_requests(limit: int = 50):
+    return {
+        "recent": system_monitor.request_logger.get_recent(limit),
+        "stats": system_monitor.request_logger.get_stats(),
+    }
+
+
+@app.get("/api/monitor/requests/errors")
+async def api_monitor_request_errors(limit: int = 50):
+    return {"errors": system_monitor.request_logger.get_errors(limit)}
+
+
+@app.get("/api/monitor/metrics/{name}")
+async def api_monitor_metric(name: str, last_n: int = 100):
+    return {"metric": name, "points": system_monitor.metrics.get_metric(name, last_n)}
+
+
+@app.get("/api/monitor/system")
+async def api_monitor_system():
+    return system_monitor.get_system_info()
+
+
+@app.post("/api/tests/run")
+async def api_run_tests():
+    try:
+        from tests.test_framework import create_test_suite
+        suite = create_test_suite()
+        result = await suite.run_all()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.middleware("http")
+async def monitor_middleware(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = time.time() - start
+
+    if request.url.path.startswith("/api/"):
+        system_monitor.request_logger.log_request(
+            method=request.method,
+            path=request.url.path,
+            status_code=response.status_code,
+            duration=duration,
+        )
+        system_monitor.metrics.increment("http.requests.total")
+        system_monitor.performance.record_timing("http_request", duration, {"path": request.url.path})
+
+    return response
 
 
 if __name__ == "__main__":

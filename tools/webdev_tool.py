@@ -1,9 +1,12 @@
-"""WebDev Tool - Inisialisasi proyek web dan manajemen dependensi."""
+"""WebDev Tool - Inisialisasi proyek web, iterasi kode, dan ekspor zip."""
 
 import asyncio
 import json
 import logging
 import os
+import shutil
+import time
+import zipfile
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -332,3 +335,162 @@ class WebDevTool:
             for f in files:
                 structure["files"].append(os.path.join(rel_root, f))
         return structure
+
+    def export_zip(self, project_dir: str, output_path: Optional[str] = None,
+                   exclude_patterns: Optional[list[str]] = None) -> dict:
+        if not os.path.exists(project_dir):
+            return {"success": False, "error": f"Direktori tidak ditemukan: {project_dir}"}
+
+        exclude = set(exclude_patterns or ["node_modules", ".git", "__pycache__", ".next", ".venv", ".env"])
+
+        if not output_path:
+            proj_name = os.path.basename(project_dir)
+            output_path = os.path.join(self.output_dir, f"{proj_name}_{int(time.time())}.zip")
+            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+        try:
+            files_added = 0
+            with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for root, dirs, files in os.walk(project_dir):
+                    dirs[:] = [d for d in dirs if d not in exclude]
+                    for f in files:
+                        if f in exclude:
+                            continue
+                        full_path = os.path.join(root, f)
+                        arc_name = os.path.relpath(full_path, project_dir)
+                        try:
+                            zf.write(full_path, arc_name)
+                            files_added += 1
+                        except Exception:
+                            pass
+
+            size_mb = round(os.path.getsize(output_path) / (1024 * 1024), 2)
+            logger.info(f"Proyek diekspor ke zip: {output_path} ({files_added} files, {size_mb}MB)")
+
+            return {
+                "success": True,
+                "output_path": output_path,
+                "files_count": files_added,
+                "size_mb": size_mb,
+            }
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def read_file(self, project_dir: str, file_path: str) -> dict:
+        full_path = os.path.join(project_dir, file_path)
+        if not os.path.exists(full_path):
+            return {"success": False, "error": f"File tidak ditemukan: {file_path}"}
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            return {"success": True, "file_path": file_path, "content": content, "size": len(content)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def write_file(self, project_dir: str, file_path: str, content: str) -> dict:
+        full_path = os.path.join(project_dir, file_path)
+        try:
+            os.makedirs(os.path.dirname(full_path) or project_dir, exist_ok=True)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(content)
+            logger.info(f"File ditulis: {file_path}")
+            return {"success": True, "file_path": file_path, "size": len(content)}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def edit_file(self, project_dir: str, file_path: str,
+                  old_text: str, new_text: str) -> dict:
+        full_path = os.path.join(project_dir, file_path)
+        if not os.path.exists(full_path):
+            return {"success": False, "error": f"File tidak ditemukan: {file_path}"}
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if old_text not in content:
+                return {"success": False, "error": "Teks lama tidak ditemukan dalam file"}
+
+            new_content = content.replace(old_text, new_text, 1)
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+
+            logger.info(f"File diedit: {file_path}")
+            return {"success": True, "file_path": file_path, "changes": 1}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    def create_component(self, project_dir: str, name: str, framework: str,
+                         template_type: str = "functional") -> dict:
+        component_templates = {
+            "react": {
+                "functional": f'import React from "react";\n\nexport default function {name}() {{\n  return (\n    <div className="{name.lower()}">\n      <h2>{name}</h2>\n    </div>\n  );\n}}\n',
+                "class": f'import React, {{ Component }} from "react";\n\nexport default class {name} extends Component {{\n  render() {{\n    return (\n      <div className="{name.lower()}">\n        <h2>{name}</h2>\n      </div>\n    );\n  }}\n}}\n',
+            },
+            "vue": {
+                "functional": f'<template>\n  <div class="{name.lower()}">\n    <h2>{name}</h2>\n  </div>\n</template>\n\n<script>\nexport default {{\n  name: "{name}",\n}};\n</script>\n\n<style scoped>\n.{name.lower()} {{\n  padding: 20px;\n}}\n</style>\n',
+            },
+        }
+
+        templates = component_templates.get(framework, {})
+        content = templates.get(template_type)
+        if not content:
+            return {"success": False, "error": f"Template tidak tersedia untuk {framework}/{template_type}"}
+
+        ext_map = {"react": ".jsx", "vue": ".vue", "nextjs": ".jsx"}
+        ext = ext_map.get(framework, ".js")
+        comp_dir = "src/components" if framework in ("react", "vue") else "components"
+        file_path = os.path.join(comp_dir, f"{name}{ext}")
+
+        return self.write_file(project_dir, file_path, content)
+
+    def add_api_route(self, project_dir: str, route_path: str, method: str = "GET",
+                      handler_code: str = "", framework: str = "express") -> dict:
+        route_templates = {
+            "express": f'\napp.{method.lower()}("{route_path}", (req, res) => {{\n  {handler_code or "res.json({ message: \"ok\" })"}\n}});\n',
+            "flask": f'\n@app.route("{route_path}", methods=["{method.upper()}"])\ndef {route_path.replace("/", "_").strip("_")}():\n    {handler_code or "return jsonify({\"message\": \"ok\"})"}\n',
+            "fastapi": f'\n@app.{method.lower()}("{route_path}")\nasync def {route_path.replace("/", "_").strip("_")}():\n    {handler_code or "return {\"message\": \"ok\"}"}\n',
+        }
+
+        route_code = route_templates.get(framework)
+        if not route_code:
+            return {"success": False, "error": f"Framework '{framework}' tidak didukung untuk route"}
+
+        entry_files = {
+            "express": "server.js",
+            "flask": "app.py",
+            "fastapi": "main.py",
+        }
+        entry_file = entry_files.get(framework, "server.js")
+        full_path = os.path.join(project_dir, entry_file)
+
+        if not os.path.exists(full_path):
+            return {"success": False, "error": f"Entry file tidak ditemukan: {entry_file}"}
+
+        try:
+            with open(full_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            if framework == "express":
+                insert_before = "app.listen("
+                if insert_before in content:
+                    content = content.replace(insert_before, route_code + "\n" + insert_before, 1)
+                else:
+                    content += route_code
+            else:
+                content += route_code
+
+            with open(full_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+            return {"success": True, "route": route_path, "method": method, "file": entry_file}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+    @property
+    def output_dir(self):
+        return getattr(self, "_output_dir", "data/webdev_exports")
+
+    @output_dir.setter
+    def output_dir(self, value):
+        self._output_dir = value
+        os.makedirs(value, exist_ok=True)

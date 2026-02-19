@@ -1,5 +1,6 @@
-"""Slides Tool - Logika untuk pembuatan presentasi."""
+"""Slides Tool - Pembuatan presentasi dengan ekspor HTML/PPTX dan konten dinamis."""
 
+import json
 import logging
 import os
 import time
@@ -187,3 +188,149 @@ show(0);
 
         logger.info(f"Presentasi HTML diekspor: {output_path}")
         return f"Presentasi '{pres.title}' berhasil di-export ke HTML: {output_path}"
+
+    def export_pptx(self, title_or_pres, output_path: Optional[str] = None) -> str:
+        pres = self._resolve_presentation(title_or_pres)
+        if not pres:
+            return "Tidak ada presentasi untuk di-export."
+
+        try:
+            from pptx import Presentation as PptxPresentation
+            from pptx.util import Inches, Pt
+            from pptx.enum.text import PP_ALIGN
+        except ImportError:
+            return "python-pptx tidak terinstal. Jalankan: pip install python-pptx"
+
+        pptx_pres = PptxPresentation()
+        pptx_pres.slide_width = Inches(13.333)
+        pptx_pres.slide_height = Inches(7.5)
+
+        for slide in pres.slides:
+            if slide.layout == "title":
+                layout = pptx_pres.slide_layouts[0]
+                pptx_slide = pptx_pres.slides.add_slide(layout)
+                pptx_slide.shapes.title.text = slide.title
+                if len(pptx_slide.placeholders) > 1:
+                    pptx_slide.placeholders[1].text = slide.content or ""
+            else:
+                layout = pptx_pres.slide_layouts[1]
+                pptx_slide = pptx_pres.slides.add_slide(layout)
+                pptx_slide.shapes.title.text = slide.title
+                if len(pptx_slide.placeholders) > 1:
+                    tf = pptx_slide.placeholders[1].text_frame
+                    tf.text = ""
+                    for line in (slide.content or "").split("\n"):
+                        p = tf.add_paragraph()
+                        p.text = line
+                        p.font.size = Pt(18)
+
+            if slide.notes:
+                notes_slide = pptx_slide.notes_slide
+                notes_slide.notes_text_frame.text = slide.notes
+
+        if not output_path:
+            safe_title = pres.title.replace(" ", "_").lower()
+            output_path = os.path.join(self.output_dir, f"{safe_title}_{int(time.time())}.pptx")
+
+        pptx_pres.save(output_path)
+        logger.info(f"Presentasi PPTX diekspor: {output_path}")
+        return f"Presentasi '{pres.title}' berhasil di-export ke PPTX: {output_path}"
+
+    def _resolve_presentation(self, title_or_pres) -> Optional[Presentation]:
+        if isinstance(title_or_pres, Presentation):
+            return title_or_pres
+        elif isinstance(title_or_pres, str):
+            for p in self.presentations:
+                if p.title == title_or_pres:
+                    return p
+        if self.presentations:
+            return self.presentations[-1]
+        return None
+
+    def update_slide(self, presentation: Presentation, index: int,
+                     title: Optional[str] = None, content: Optional[str] = None,
+                     layout: Optional[str] = None, notes: Optional[str] = None) -> dict:
+        if index < 0 or index >= len(presentation.slides):
+            return {"success": False, "error": f"Index {index} di luar jangkauan"}
+
+        slide = presentation.slides[index]
+        if title is not None:
+            slide.title = title
+        if content is not None:
+            slide.content = content
+        if layout is not None:
+            slide.layout = layout
+        if notes is not None:
+            slide.notes = notes
+
+        return {"success": True, "slide": slide.to_dict()}
+
+    def remove_slide(self, presentation: Presentation, index: int) -> dict:
+        if index < 0 or index >= len(presentation.slides):
+            return {"success": False, "error": f"Index {index} di luar jangkauan"}
+        removed = presentation.slides.pop(index)
+        return {"success": True, "removed": removed.to_dict(), "remaining": len(presentation.slides)}
+
+    def reorder_slides(self, presentation: Presentation, new_order: list[int]) -> dict:
+        if sorted(new_order) != list(range(len(presentation.slides))):
+            return {"success": False, "error": "Urutan tidak valid"}
+        presentation.slides = [presentation.slides[i] for i in new_order]
+        return {"success": True, "order": new_order}
+
+    def duplicate_slide(self, presentation: Presentation, index: int) -> dict:
+        if index < 0 or index >= len(presentation.slides):
+            return {"success": False, "error": f"Index {index} di luar jangkauan"}
+        original = presentation.slides[index]
+        new_slide = Slide(
+            title=original.title + " (copy)",
+            content=original.content,
+            layout=original.layout,
+            notes=original.notes,
+        )
+        new_slide.images = original.images.copy()
+        presentation.slides.insert(index + 1, new_slide)
+        return {"success": True, "new_index": index + 1, "slide": new_slide.to_dict()}
+
+    def create_from_outline(self, title: str, outline: list[dict],
+                            author: str = "", theme: str = "modern") -> dict:
+        pres = self.create_presentation(title=title, author=author, theme=theme)
+        for item in outline:
+            slide_title = item.get("title", "")
+            slide_content = item.get("content", "")
+            slide_layout = item.get("layout", "title_content")
+            slide_notes = item.get("notes", "")
+            slide = pres.add_slide(slide_title, slide_content, slide_layout, slide_notes)
+            if "images" in item:
+                slide.images = item["images"]
+
+        return {"success": True, "presentation": pres.to_dict()}
+
+    def get_presentation(self, title: str) -> Optional[dict]:
+        for p in self.presentations:
+            if p.title == title:
+                return p.to_dict()
+        return None
+
+    def import_from_json(self, json_path: str) -> dict:
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            pres = self.create_presentation(
+                title=data.get("title", "Imported"),
+                author=data.get("author", ""),
+                theme=data.get("theme", "modern"),
+            )
+
+            for slide_data in data.get("slides", []):
+                slide = pres.add_slide(
+                    title=slide_data.get("title", ""),
+                    content=slide_data.get("content", ""),
+                    layout=slide_data.get("layout", "title_content"),
+                    notes=slide_data.get("notes", ""),
+                )
+                slide.images = slide_data.get("images", [])
+
+            return {"success": True, "presentation": pres.to_dict()}
+        except Exception as e:
+            return {"success": False, "error": str(e)}
