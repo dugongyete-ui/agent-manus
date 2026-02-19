@@ -106,6 +106,12 @@ Protocol server for standardized communication with external model providers.
 - `POST /api/tests/run` - Run full test suite
 
 ## Recent Changes
+- 2026-02-19: Fixed chat sending bug - messages no longer get stuck on send (mobile & desktop)
+- 2026-02-19: Added 3-minute timeout protection for stuck streaming requests
+- 2026-02-19: Improved streaming endpoint with guaranteed done/error events and try/catch per tool
+- 2026-02-19: Added mobile keyboard support (enterkeyhint, blur on send, visual feedback)
+- 2026-02-19: Migrated webdev_tool project storage from local to PostgreSQL database
+- 2026-02-19: WebDevTool now stores projects in /home/runner/workspace/user_workspace (isolated from main project)
 - 2026-02-19: Added SpreadsheetTool with comprehensive CSV/Excel processing
 - 2026-02-19: Added PlaybookManager with pattern detection and auto-generation
 - 2026-02-19: Enhanced WebDevTool with file operations and ZIP export
