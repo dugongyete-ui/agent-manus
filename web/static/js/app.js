@@ -372,6 +372,7 @@ function appendToolCard(toolExec) {
         slides_tool: 'ri-slideshow-line',
         schedule_tool: 'ri-calendar-line',
         message_tool: 'ri-message-2-line',
+        skill_manager: 'ri-lightbulb-line',
     };
     const icon = toolIcons[toolExec.tool] || 'ri-tools-line';
 
@@ -516,6 +517,7 @@ async function loadTools() {
             SlidesTool: 'ri-slideshow-line',
             ScheduleTool: 'ri-calendar-line',
             MessageTool: 'ri-message-2-line',
+            SkillManager: 'ri-lightbulb-line',
         };
         list.innerHTML = data.tools.map(t => `
             <div class="tool-list-item">
@@ -558,6 +560,8 @@ function switchTab(tab) {
 
     if (tab === 'files') loadFiles(currentFilePath);
     if (tab === 'tools') loadTools();
+    if (tab === 'schedule') loadScheduleTasks();
+    if (tab === 'skills') loadSkills();
 }
 
 function handleKeyDown(e) {
@@ -603,6 +607,106 @@ function formatFileSize(bytes) {
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+async function loadScheduleTasks() {
+    try {
+        const data = await api('/api/schedule/tasks');
+        const list = document.getElementById('scheduleList');
+        const statsEl = document.getElementById('scheduleStats');
+
+        const statsData = await api('/api/schedule/stats');
+        if (statsEl) {
+            statsEl.innerHTML = `
+                <div style="display:flex;gap:12px;padding:8px 0;font-size:11px;color:var(--text-muted)">
+                    <span>Total: <strong style="color:var(--text-primary)">${statsData.total_tasks || 0}</strong></span>
+                    <span>Active: <strong style="color:var(--accent)">${statsData.active || 0}</strong></span>
+                    <span>Runs: <strong style="color:var(--text-primary)">${statsData.total_runs || 0}</strong></span>
+                </div>
+            `;
+        }
+
+        if (!data.tasks || data.tasks.length === 0) {
+            list.innerHTML = '<div class="empty-state"><i class="ri-calendar-line"></i><p>No scheduled tasks</p></div>';
+            return;
+        }
+
+        list.innerHTML = data.tasks.map(t => {
+            const typeIcon = t.type === 'cron' ? 'ri-time-line' : t.type === 'once' ? 'ri-timer-line' : 'ri-repeat-line';
+            const statusClass = t.status === 'active' ? 'success' : t.status === 'paused' ? 'warning' : 'muted';
+            const nextRun = t.next_run ? new Date(t.next_run * 1000).toLocaleTimeString() : '-';
+            return `
+                <div class="schedule-item">
+                    <div class="schedule-item-header">
+                        <i class="${typeIcon}" style="color:var(--accent)"></i>
+                        <span class="schedule-name">${escapeHtml(t.name)}</span>
+                        <span class="schedule-status ${statusClass}">${t.status}</span>
+                    </div>
+                    <div class="schedule-item-detail">
+                        <span>${t.type}${t.interval ? ' (' + t.interval + 's)' : ''}${t.cron_expression ? ' (' + t.cron_expression + ')' : ''}</span>
+                        <span>Runs: ${t.run_count} | Next: ${nextRun}</span>
+                    </div>
+                    <div class="schedule-item-actions">
+                        ${t.status === 'active' ? `<button class="btn-xs" onclick="pauseTask('${t.task_id}')"><i class="ri-pause-line"></i></button>` : ''}
+                        ${t.status === 'paused' ? `<button class="btn-xs" onclick="resumeTask('${t.task_id}')"><i class="ri-play-line"></i></button>` : ''}
+                        <button class="btn-xs btn-danger" onclick="cancelTask('${t.task_id}')"><i class="ri-delete-bin-line"></i></button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load schedule tasks:', e);
+    }
+}
+
+async function pauseTask(taskId) {
+    await api(`/api/schedule/tasks/${taskId}/pause`, { method: 'POST' });
+    loadScheduleTasks();
+}
+
+async function resumeTask(taskId) {
+    await api(`/api/schedule/tasks/${taskId}/resume`, { method: 'POST' });
+    loadScheduleTasks();
+}
+
+async function cancelTask(taskId) {
+    await api(`/api/schedule/tasks/${taskId}`, { method: 'DELETE' });
+    loadScheduleTasks();
+}
+
+async function loadSkills() {
+    try {
+        const data = await api('/api/skills');
+        const list = document.getElementById('skillsList');
+
+        if (!data.skills || data.skills.length === 0) {
+            list.innerHTML = '<div class="empty-state"><i class="ri-lightbulb-line"></i><p>No skills loaded</p></div>';
+            return;
+        }
+
+        list.innerHTML = data.skills.map(s => {
+            const caps = (s.capabilities || []).slice(0, 3).map(c => `<span class="skill-cap">${escapeHtml(c)}</span>`).join('');
+            const scripts = (s.scripts || []).map(sc => `<span class="skill-script">${escapeHtml(sc)}</span>`).join('');
+            return `
+                <div class="skill-item">
+                    <div class="skill-item-header">
+                        <i class="ri-lightbulb-line" style="color:var(--accent)"></i>
+                        <span class="skill-name">${escapeHtml(s.name)}</span>
+                        <span class="skill-version">v${s.version || '1.0.0'}</span>
+                    </div>
+                    <div class="skill-desc">${escapeHtml(s.description || '').substring(0, 120)}</div>
+                    ${caps ? `<div class="skill-caps">${caps}</div>` : ''}
+                    ${scripts ? `<div class="skill-scripts"><i class="ri-code-line"></i> ${scripts}</div>` : ''}
+                    <div class="skill-meta">
+                        <span>Used: ${s.use_count || 0}x</span>
+                        ${s.author ? `<span>By: ${escapeHtml(s.author)}</span>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        console.error('Failed to load skills:', e);
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

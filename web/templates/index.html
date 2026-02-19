@@ -102,6 +102,12 @@
                         <button class="panel-tab" data-tab="tools" onclick="switchTab('tools')">
                             <i class="ri-tools-line"></i> Tools
                         </button>
+                        <button class="panel-tab" data-tab="schedule" onclick="switchTab('schedule')">
+                            <i class="ri-calendar-line"></i> Schedule
+                        </button>
+                        <button class="panel-tab" data-tab="skills" onclick="switchTab('skills')">
+                            <i class="ri-lightbulb-line"></i> Skills
+                        </button>
                     </div>
 
                     <div class="panel-content" id="activityTab">
@@ -127,6 +133,27 @@
 
                     <div class="panel-content hidden" id="toolsTab">
                         <div class="tools-list" id="toolsList"></div>
+                    </div>
+
+                    <div class="panel-content hidden" id="scheduleTab">
+                        <div class="schedule-header">
+                            <div class="schedule-stats" id="scheduleStats"></div>
+                        </div>
+                        <div class="schedule-list" id="scheduleList">
+                            <div class="empty-state">
+                                <i class="ri-calendar-line"></i>
+                                <p>No scheduled tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-content hidden" id="skillsTab">
+                        <div class="skills-list" id="skillsList">
+                            <div class="empty-state">
+                                <i class="ri-lightbulb-line"></i>
+                                <p>No skills loaded</p>
+                            </div>
+                        </div>
                     </div>
                 </aside>
             </div>
