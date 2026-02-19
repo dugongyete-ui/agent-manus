@@ -10,6 +10,17 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Fase 16: Deep Analysis & Planning Orchestration (Feb 19, 2026)
+- **4-Phase Execution Flow**: Implemented Planning → Execution → Reflection → Synthesis orchestration loop, replacing the shallow instant-response pattern
+- **LLM as Primary Decision Maker**: Removed `detect_intent()` regex bypass as primary dispatcher - LLM now decides what tools to use. Intent detection is fallback only
+- **Planner Integration**: Planner class now actively used in main flow via `_create_initial_plan()` and `_reflect_on_result()` methods
+- **Universal System Prompt**: Rewrote system prompt to work across ALL models (not just default). Supports `plan`, `think`, `use_tool`, `multi_step`, `respond` action types
+- **Deep Analysis Mode**: Multi-step execution with iterative reflection. Agent analyzes tool results and decides if more steps are needed before synthesizing final answer
+- **Robust JSON Parser**: `_parse_llm_response()` handles mixed text+JSON, trailing commas, multiple JSON blocks, and infers tool type from context
+- **Shell Tool Workspace Isolation**: Shell commands now execute in `/home/runner/workspace/user_workspace/` instead of project root
+- **Frontend Planning UI**: Added plan card visualization, thinking indicators, reflection display, and phase status tracking in the chat interface
+- **New SSE Event Types**: `planning`, `plan`, `thinking`, `reflection`, `phase` events for rich frontend visualization of agent reasoning process
+
 ### Fase 15: Full Tool Test & MCP SSE Fix (Feb 19, 2026)
 - **MCP SSE Parser Fix**: Fixed `CustomProvider.complete()` and `stream()` to handle SSE responses where data chunks are JSON-quoted strings (`data: "text"`) instead of JSON objects
 - **Intent Detection Safety**: Added question-pattern bypass to prevent questions (apa/siapa/bagaimana/why/how/etc.) from triggering tool execution; added empty-param validation to skip invalid matches
