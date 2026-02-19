@@ -10,6 +10,15 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Fase 13: Autonomous Tool Execution Fix (Feb 19, 2026)
+- **System Prompt Overhaul**: Rewrote agent system prompt to enforce JSON-only tool call responses; prevents LLM from responding "I can't run tools"
+- **Robust JSON Parser**: Enhanced `_parse_llm_response()` to handle JSON in markdown code blocks, embedded in text, and fallback text-based tool detection
+- **File Tool Completeness**: Added `analyze`, `search`, and `info` operations to `_execute_file_tool()` with fallback implementations
+- **Slides HTML Export**: Added `export_html()` method to SlidesTool for generating interactive HTML presentations with keyboard navigation
+- **Browser Tool Fix**: Updated to use system-installed Chromium (`/nix/store/...chromium`) via `shutil.which()` for reliable headless browsing
+- **Generate Tool**: Updated `generate()` to accept `**kwargs` for passing params directly from tool calls
+- **Slides Tool Handler**: Expanded `_execute_tool` slides handling to support `create`, `add_slide`, `export`, and `list` actions
+
 ### Fase 12: Integrasi Eksternal Tanpa Kunci (Feb 19, 2026)
 - **Multi-Model AI Support**: Added 16 AI models accessible via public API endpoint with `?provider=Perplexity&model={model}` pattern
   - Models: gpt5_thinking, 03, o3pro, claude40opus, claude40opusthinking, claude41opusthinking, claude45sonnet, claude45sonnetthinking, grok4, o3_research, o3pro_research, claude40sonnetthinking_research, o3pro_labs, claude40opusthinking_labs, r1
