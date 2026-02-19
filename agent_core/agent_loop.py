@@ -10,6 +10,9 @@ from agent_core.knowledge_base import KnowledgeBase
 from agent_core.llm_client import LLMClient
 from agent_core.planner import Planner, TaskStatus
 from agent_core.tool_selector import ToolSelector
+from agent_core.rlhf_engine import RLHFEngine
+from agent_core.meta_learner import MetaLearner
+from agent_core.security_manager import SecurityManager
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +74,10 @@ class AgentLoop:
             summarization_threshold=config.get("context", {}).get("summarization_threshold", 15),
         )
         self.tool_selector = ToolSelector(config_path="config/tool_configs.json")
-        self.planner = Planner()
+        self.rlhf_engine = RLHFEngine()
+        self.meta_learner = MetaLearner()
+        self.security_manager = SecurityManager()
+        self.planner = Planner(meta_learner=self.meta_learner)
         self.llm = LLMClient()
         self.knowledge_base = KnowledgeBase()
         self.state = AgentState.IDLE
@@ -80,6 +86,7 @@ class AgentLoop:
         self.execution_log: list[dict] = []
         self._tool_executors: dict = {}
         self._tool_instances: dict = {}
+        self._current_tools_used: list[str] = []
 
         self.context_manager.set_system_prompt(SYSTEM_PROMPT)
 
@@ -95,6 +102,8 @@ class AgentLoop:
         self.context_manager.add_message("user", user_input)
         self.iteration_count = 0
         self.execution_log.clear()
+        self._current_tools_used = []
+        start_time = time.time()
 
         try:
             while self.iteration_count < self.max_iterations:
@@ -166,6 +175,19 @@ class AgentLoop:
         tool = self._tool_instances.get(tool_name)
         if not tool:
             return f"Tool '{tool_name}' tidak ditemukan."
+
+        if tool_name == "shell_tool" and "command" in params:
+            sec_check = self.security_manager.validate_command(params["command"])
+            if not sec_check.get("allowed"):
+                return f"[KEAMANAN] Perintah diblokir: {sec_check.get('reason', 'tidak diizinkan')}"
+
+        if tool_name == "file_tool" and "path" in params:
+            operation = params.get("operation", "read")
+            sec_check = self.security_manager.validate_file_path(params["path"], operation)
+            if not sec_check.get("allowed"):
+                return f"[KEAMANAN] Akses path diblokir: {sec_check.get('reason', 'tidak diizinkan')}"
+
+        self._current_tools_used.append(tool_name)
 
         start_time = time.time()
         try:
@@ -239,6 +261,7 @@ class AgentLoop:
 
             duration_ms = int((time.time() - start_time) * 1000)
             self.knowledge_base.log_tool_usage(tool_name, str(params)[:100], str(params)[:200], result[:200], True, duration_ms)
+            self.rlhf_engine.record_tool_outcome(tool_name, True, duration_ms, context="execution")
             logger.info(f"Tool {tool_name} selesai ({duration_ms}ms)")
             return result
 
@@ -246,6 +269,7 @@ class AgentLoop:
             duration_ms = int((time.time() - start_time) * 1000)
             error_msg = f"Error pada {tool_name}: {str(e)}"
             self.knowledge_base.log_tool_usage(tool_name, str(params)[:100], str(params)[:200], error_msg, False, duration_ms)
+            self.rlhf_engine.record_tool_outcome(tool_name, False, duration_ms, context="execution")
             logger.error(error_msg)
             return error_msg
 

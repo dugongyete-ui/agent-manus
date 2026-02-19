@@ -1,4 +1,4 @@
-"""Planner - Modul untuk membuat dan memperbarui rencana tugas."""
+"""Planner - Modul untuk membuat dan memperbarui rencana tugas dengan optimasi meta-learning."""
 
 import logging
 import time
@@ -27,6 +27,8 @@ class Task:
         self.created_at = time.time()
         self.updated_at = time.time()
         self.metadata: dict = {}
+        self.tools_used: list[str] = []
+        self.duration_ms: int = 0
 
     def to_dict(self) -> dict:
         return {
@@ -38,13 +40,19 @@ class Task:
             "result": self.result,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "tools_used": self.tools_used,
+            "duration_ms": self.duration_ms,
         }
 
 
 class Planner:
-    def __init__(self):
+    def __init__(self, meta_learner=None):
         self.tasks: list[Task] = []
         self._task_counter = 0
+        self.meta_learner = meta_learner
+
+    def set_meta_learner(self, meta_learner):
+        self.meta_learner = meta_learner
 
     def create_plan(self, goal: str, steps: list[str]) -> list[Task]:
         self.tasks.clear()
@@ -59,6 +67,22 @@ class Planner:
             self.tasks.append(task)
         logger.info(f"Rencana dibuat untuk '{goal}' dengan {len(steps)} langkah.")
         return self.tasks
+
+    def create_optimized_plan(self, goal: str, steps: list[str]) -> dict:
+        tasks = self.create_plan(goal, steps)
+        strategy = None
+        if self.meta_learner:
+            strategy = self.meta_learner.get_strategy_for_task(goal)
+            if strategy.get("has_strategy"):
+                for task in tasks:
+                    task.metadata["strategy"] = strategy
+                logger.info(f"Strategi meta-learning diterapkan: {strategy.get('task_type')}")
+
+        return {
+            "tasks": [t.to_dict() for t in tasks],
+            "strategy": strategy,
+            "optimized": strategy is not None and strategy.get("has_strategy", False),
+        }
 
     def add_task(self, description: str, priority: int = 5) -> Task:
         self._task_counter += 1
@@ -100,6 +124,8 @@ class Planner:
             task.status = status
             task.result = result
             task.updated_at = time.time()
+            if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
+                task.duration_ms = int((task.updated_at - task.created_at) * 1000)
             logger.info(f"Tugas '{task_id}' diperbarui ke {status.value}")
 
     def get_next_task(self) -> Optional[Task]:
@@ -114,18 +140,45 @@ class Planner:
     def get_progress(self) -> dict:
         total = 0
         completed = 0
+        failed = 0
         for task in self.tasks:
             total += 1
             if task.status == TaskStatus.COMPLETED:
                 completed += 1
+            elif task.status == TaskStatus.FAILED:
+                failed += 1
             for sub in task.subtasks:
                 total += 1
                 if sub.status == TaskStatus.COMPLETED:
                     completed += 1
+                elif sub.status == TaskStatus.FAILED:
+                    failed += 1
         return {
             "total": total,
             "completed": completed,
+            "failed": failed,
             "percentage": (completed / total * 100) if total > 0 else 0,
+        }
+
+    def get_execution_stats(self) -> dict:
+        all_tools = []
+        total_duration = 0
+        for task in self.tasks:
+            all_tools.extend(task.tools_used)
+            total_duration += task.duration_ms
+            for sub in task.subtasks:
+                all_tools.extend(sub.tools_used)
+                total_duration += sub.duration_ms
+
+        tool_counts = {}
+        for tool in all_tools:
+            tool_counts[tool] = tool_counts.get(tool, 0) + 1
+
+        progress = self.get_progress()
+        return {
+            **progress,
+            "tools_used": tool_counts,
+            "total_duration_ms": total_duration,
         }
 
     def get_plan_summary(self) -> str:
