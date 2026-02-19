@@ -445,10 +445,17 @@ class WebDevTool:
 
     def add_api_route(self, project_dir: str, route_path: str, method: str = "GET",
                       handler_code: str = "", framework: str = "express") -> dict:
+        method_lower = method.lower()
+        method_upper = method.upper()
+        func_name = route_path.replace("/", "_").strip("_")
+        default_express = handler_code or 'res.json({ message: "ok" })'
+        default_flask = handler_code or 'return jsonify({"message": "ok"})'
+        default_fastapi = handler_code or 'return {"message": "ok"}'
+
         route_templates = {
-            "express": f'\napp.{method.lower()}("{route_path}", (req, res) => {{\n  {handler_code or "res.json({ message: \"ok\" })"}\n}});\n',
-            "flask": f'\n@app.route("{route_path}", methods=["{method.upper()}"])\ndef {route_path.replace("/", "_").strip("_")}():\n    {handler_code or "return jsonify({\"message\": \"ok\"})"}\n',
-            "fastapi": f'\n@app.{method.lower()}("{route_path}")\nasync def {route_path.replace("/", "_").strip("_")}():\n    {handler_code or "return {\"message\": \"ok\"}"}\n',
+            "express": f'\napp.{method_lower}("{route_path}", (req, res) => {{\n  {default_express}\n}});\n',
+            "flask": f'\n@app.route("{route_path}", methods=["{method_upper}"])\ndef {func_name}():\n    {default_flask}\n',
+            "fastapi": f'\n@app.{method_lower}("{route_path}")\nasync def {func_name}():\n    {default_fastapi}\n',
         }
 
         route_code = route_templates.get(framework)

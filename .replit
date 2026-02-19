@@ -5,7 +5,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["alsa-lib", "at-spi2-atk", "atk", "cups", "dbus", "espeak-ng", "expat", "file", "freetype", "gitFull", "glib", "lcms2", "libdrm", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "libxkbcommon", "libyaml", "mesa", "nspr", "nss", "openjpeg", "pango", "playwright-driver", "tcl", "tk", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "xorg.libxshmfence", "zlib", "chromium"]
+packages = ["alsa-lib", "at-spi2-atk", "atk", "chromium", "cups", "dbus", "espeak-ng", "expat", "file", "freetype", "gitFull", "glib", "lcms2", "libdrm", "libimagequant", "libjpeg", "libtiff", "libwebp", "libxcrypt", "libxkbcommon", "libyaml", "mesa", "nspr", "nss", "openjpeg", "pango", "playwright-driver", "tcl", "tk", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "xorg.libxshmfence", "zlib"]
 
 [workflows]
 runButton = "Project"

@@ -2,11 +2,12 @@
 
 ## Overview
 
-Manus Agent is an autonomous AI agent framework in Python, operating on an iterative loop of Analyze -> Think -> Select -> Execute -> Observe. It features a modular architecture supporting diverse tools for shell operations, file management, browser automation, web search, media generation, presentations, web development scaffolding, task scheduling, skill management, and user messaging. A sandbox environment ensures secure code execution and robust VM lifecycle management. The core vision is to provide an adaptable, intelligent assistant for automating complex workflows and enhancing productivity across various domains.
+Manus Agent is an autonomous AI agent framework in Python, operating on an iterative loop of Analyze -> Think -> Select -> Execute -> Observe. It features a modular architecture supporting diverse tools for shell operations, file management, browser automation, web search, media generation, presentations, web development scaffolding, task scheduling, skill management, spreadsheet processing, playbook automation, and user messaging. A sandbox environment ensures secure code execution with VM isolation and persistent shell sessions. The core vision is to provide an adaptable, intelligent assistant for automating complex workflows.
 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Work autonomously without many questions ("jangan banyak tanya harus lakukan dengan senang hati").
 
 ## System Architecture
 
@@ -20,47 +21,95 @@ The `tools` directory contains specialized tools:
 - **`BrowserTool`**: Full browser automation using Playwright/Chromium.
 - **`SearchTool`**: Web search via DuckDuckGo with content fetching and caching.
 - **`GenerateTool`**: Multimodal content generation (images, SVG, charts, audio, video, documents).
-- **`SlidesTool`**: Presentation creation and management.
-- **`WebDevTool`**: Web project scaffolding for multiple frameworks.
+- **`SlidesTool`**: Presentation creation with HTML/PPTX export, slide management (update/remove/duplicate/reorder), outline-based creation, and JSON import/export.
+- **`WebDevTool`**: Web project scaffolding for multiple frameworks with code iteration (read/write/edit), component creation, API route addition, and ZIP export.
 - **`ScheduleTool`**: Robust task scheduling with persistence and history.
 - **`MessageTool`**: Structured user communication.
 - **`SkillManager`**: Manages dynamic discovery, loading, and execution of extensible skills.
+- **`SpreadsheetTool`**: CSV/Excel processing with filter (10+ operators), sort, statistics, pivot tables, formulas (sum/avg/multiply/divide/percentage), search, merge, and JSON conversion.
+- **`PlaybookManager`**: Reusable tool execution sequences with variable substitution, dry-run mode, pattern detection from execution history, and automatic playbook generation.
 
 ### Skills System
 The `skills` system allows for dynamic extensibility. Each skill is a modular directory with documentation (`SKILL.md`), metadata (`config.json`), and implementation scripts.
 
 ### Sandbox Environment
-The `sandbox_env` provides a secure, isolated environment. `RuntimeExecutor` handles code execution across runtimes, `PackageManager` manages installations, and `VMManager` controls virtual machine lifecycles.
+- **`VMManager`**: VM lifecycle management with 4 isolation levels (NONE/BASIC/STRICT/MAXIMUM), configurable resource limits (CPU, memory, disk, processes), network policies with domain filtering, snapshot management with automatic cleanup, and execution tracking.
+- **`ShellSessionManager`**: Persistent shell sessions with command history, working directory tracking, multiple runtime support (python3, nodejs, bash, ruby, php), and async execution.
 
-### Web UI
-The web interface uses a FastAPI backend with Jinja2 templates, served on port 5000. It features a dark theme, model selector, and panels for activity, files, tools, schedule, skills, learning insights, and security monitoring. PostgreSQL is used for persistent storage.
+### Monitoring System
+- **`MetricsCollector`**: Time-series metrics, counters, gauges, and histograms with thread-safe storage.
+- **`HealthChecker`**: Registered health checks with critical/non-critical classification.
+- **`PerformanceTracker`**: Operation timing with stats, slow operation detection.
+- **`RequestLogger`**: HTTP request logging with error tracking and statistics.
+- **`SystemMonitor`**: Unified dashboard combining all monitoring components with system info (CPU, memory, disk).
 
-### LLM Integration
-Supports 16 AI models accessible via public API endpoints, categorized for thinking, reasoning, general, research, and labs. Includes exponential backoff retry logic, data validation against injection, and automatic parameter generation from user input.
+### Testing
+- **`TestSuite`**: 25+ async-compatible test cases covering VM, shell, spreadsheet, playbook, webdev, and slides components with detailed result tracking and category-based organization.
 
-### MCP (Model Context Protocol) Integration
-A protocol layer with dataclass-based message types, provider adapters for various LLM services (OpenAI, Anthropic, Google), and a registry for model routing. A high-level async client handles chat/complete/stream requests, and a server provides REST-compatible methods. This runs silently in the backend without requiring API keys.
+### Web Interface
+FastAPI server (`web/server.py`) with 50+ API endpoints, PostgreSQL storage, CORS support, streaming chat responses, and automatic request monitoring middleware.
 
-### Key Design Patterns
-The system emphasizes asynchronous operations, strong safety measures (command/path blocklists, timeouts, PII detection, RBAC), self-improvement through RLHF and meta-learning, modular tool design, configuration-driven behavior, auto-cleanup, and an extensible skills system.
+### MCP (Model Context Protocol)
+Protocol server for standardized communication with external model providers.
 
-## External Dependencies
+## API Endpoints Summary
 
-### Python Packages
-- `pyyaml`: Configuration parsing.
-- `aiohttp`: Asynchronous HTTP client.
-- `aiofiles`: Asynchronous file operations.
-- `rich`, `prompt-toolkit`: Terminal UI enhancements.
-- `playwright`: Headless browser automation.
-- `beautifulsoup4`: HTML parsing.
-- `Pillow`: Image processing.
-- `PyPDF2`: PDF text extraction.
-- `mutagen`: Audio file metadata analysis.
+### Core
+- `GET /api/health` - System health
+- `GET /` - Web UI
+- `POST /api/chat` - Chat with agent (streaming)
 
-### System Dependencies
-- **Playwright Chromium dependencies**: Required `nspr`, `nss`, `atk`, `cups`, `mesa`, `pango`, `alsa-lib`, `libdrm`, `libxkbcommon`, and Xorg libraries for headless browser functionality.
+### Sessions
+- `GET/POST /api/sessions` - List/create sessions
+- `DELETE/PATCH /api/sessions/{id}` - Delete/update session
 
-### Data Storage
-- **SQLite**: For the agent's knowledge base (`knowledge_base.db`).
-- **JSON files**: For user profiles (`user_profiles.json`) and scheduled tasks (`scheduled_tasks.json`).
-- **PostgreSQL**: Backend database for the web UI, storing sessions, messages, and tool execution logs.
+### VM Management
+- `GET /api/vm/list` - List VMs
+- `POST /api/vm/create` - Create VM
+- `POST /api/vm/{id}/start|stop` - Start/stop VM
+- `POST /api/vm/{id}/execute` - Execute command
+- `POST /api/vm/{id}/execute_code` - Execute code
+- `POST /api/vm/{id}/snapshot` - Create snapshot
+- `POST /api/vm/{id}/restore/{snap_id}` - Restore snapshot
+- `GET /api/vm/{id}/logs` - VM logs
+- `GET /api/vm/stats` - VM statistics
+
+### Shell Sessions
+- `POST /api/shell/create` - Create shell session
+- `POST /api/shell/{id}/execute` - Execute in session
+- `POST /api/shell/{id}/script` - Execute script
+- `GET /api/shell/{id}/history` - Command history
+- `GET /api/shell/list` - List sessions
+- `GET /api/shell/stats` - Shell statistics
+
+### Spreadsheet
+- `POST /api/spreadsheet/create` - Create spreadsheet
+- `POST /api/spreadsheet/read` - Read spreadsheet
+- `POST /api/spreadsheet/stats` - Get statistics
+- `POST /api/spreadsheet/filter` - Filter data
+
+### Playbook
+- `GET /api/playbook/list` - List playbooks
+- `POST /api/playbook/create` - Create playbook
+- `POST /api/playbook/{id}/execute` - Execute playbook
+- `GET /api/playbook/stats` - Playbook statistics
+- `GET /api/playbook/patterns` - Detected patterns
+
+### Monitoring
+- `GET /api/monitor/dashboard` - Full dashboard
+- `GET /api/monitor/health` - Health checks
+- `GET /api/monitor/performance` - Performance stats
+- `GET /api/monitor/requests` - Request logs
+- `GET /api/monitor/system` - System info
+
+### Testing
+- `POST /api/tests/run` - Run full test suite
+
+## Recent Changes
+- 2026-02-19: Added SpreadsheetTool with comprehensive CSV/Excel processing
+- 2026-02-19: Added PlaybookManager with pattern detection and auto-generation
+- 2026-02-19: Enhanced WebDevTool with file operations and ZIP export
+- 2026-02-19: Enhanced SlidesTool with PPTX export and slide management
+- 2026-02-19: Built testing framework with 25+ test cases (100% pass rate)
+- 2026-02-19: Built monitoring system with metrics, health checks, and performance tracking
+- 2026-02-19: Integrated all components into server with 50+ API endpoints and monitoring middleware
