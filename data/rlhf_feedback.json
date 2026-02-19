@@ -90,12 +90,42 @@
       "action_context": "execution",
       "reward": 1.2,
       "timestamp": 1771510023.0643764
+    },
+    {
+      "tool_name": "shell_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510501.362416
+    },
+    {
+      "tool_name": "browser_tool",
+      "action_context": "execution",
+      "reward": 1.1,
+      "timestamp": 1771510550.3320248
+    },
+    {
+      "tool_name": "browser_tool",
+      "action_context": "execution",
+      "reward": 1.1,
+      "timestamp": 1771510573.8563993
+    },
+    {
+      "tool_name": "browser_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510605.8509023
+    },
+    {
+      "tool_name": "search_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771510676.9110513
     }
   ],
   "quality_scores": [],
   "metadata": {
-    "last_updated": 1771510023.0644934,
+    "last_updated": 1771510676.9111626,
     "total_feedback": 0,
-    "total_rewards": 15
+    "total_rewards": 20
   }
 }

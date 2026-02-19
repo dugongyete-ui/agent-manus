@@ -2,19 +2,6 @@
   "policies": {
     "search_tool": {
       "tool_name": "search_tool",
-      "total_reward": 3.6,
-      "usage_count": 3,
-      "success_count": 3,
-      "fail_count": 0,
-      "avg_reward": 1.2,
-      "confidence": 0.06,
-      "success_rate": 1.0,
-      "context_rewards": {
-        "execution": 0.7884
-      }
-    },
-    "shell_tool": {
-      "tool_name": "shell_tool",
       "total_reward": 4.8,
       "usage_count": 4,
       "success_count": 4,
@@ -24,6 +11,19 @@
       "success_rate": 1.0,
       "context_rewards": {
         "execution": 0.9119
+      }
+    },
+    "shell_tool": {
+      "tool_name": "shell_tool",
+      "total_reward": 6.0,
+      "usage_count": 5,
+      "success_count": 5,
+      "fail_count": 0,
+      "avg_reward": 1.2,
+      "confidence": 0.1,
+      "success_rate": 1.0,
+      "context_rewards": {
+        "execution": 0.9983
       }
     },
     "file_tool": {
@@ -41,15 +41,15 @@
     },
     "browser_tool": {
       "tool_name": "browser_tool",
-      "total_reward": 1.0,
-      "usage_count": 1,
-      "success_count": 1,
+      "total_reward": 4.4,
+      "usage_count": 4,
+      "success_count": 4,
       "fail_count": 0,
-      "avg_reward": 1.0,
-      "confidence": 0.02,
+      "avg_reward": 1.1,
+      "confidence": 0.08,
       "success_rate": 1.0,
       "context_rewards": {
-        "execution": 0.3
+        "execution": 0.8556
       }
     },
     "generate_tool": {
@@ -132,7 +132,7 @@
     }
   },
   "metadata": {
-    "last_updated": 1771510023.0650058,
+    "last_updated": 1771510676.9116986,
     "learning_rate": 0.1,
     "exploration_rate": 0.15
   }
