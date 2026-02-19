@@ -57,7 +57,41 @@
                         </div>
                     </div>
                 </div>
+                <button class="btn-mcp-toggle" id="mcpToggleBtn" onclick="toggleMCPPanel()" title="MCP Protocol">
+                    <i class="ri-link-m"></i>
+                    <span class="mcp-status-dot" id="mcpDot"></span>
+                </button>
             </header>
+
+            <div class="mcp-panel hidden" id="mcpPanel">
+                <div class="mcp-panel-header">
+                    <h3><i class="ri-link-m"></i> MCP Protocol</h3>
+                    <button class="btn-icon" onclick="toggleMCPPanel()"><i class="ri-close-line"></i></button>
+                </div>
+                <div class="mcp-panel-body">
+                    <div class="mcp-section">
+                        <div class="mcp-toggle-row">
+                            <span>MCP Enabled</span>
+                            <label class="mcp-switch">
+                                <input type="checkbox" id="mcpEnabledToggle" onchange="toggleMCP(this.checked)">
+                                <span class="mcp-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mcp-section">
+                        <h4>Providers</h4>
+                        <div id="mcpProviderList" class="mcp-provider-list"></div>
+                    </div>
+                    <div class="mcp-section">
+                        <h4>Statistics</h4>
+                        <div id="mcpStatsDisplay" class="mcp-stats"></div>
+                    </div>
+                    <div class="mcp-section">
+                        <h4>Recent Requests</h4>
+                        <div id="mcpRequestLog" class="mcp-log"></div>
+                    </div>
+                </div>
+            </div>
 
             <div class="content-area">
                 <div class="chat-panel" id="chatPanel">

@@ -54,6 +54,17 @@ The web interface is built with a FastAPI backend on port 5000, using Jinja2 tem
 - **Auto Parameters**: Intent-based query parameter generation from user input
 - **Model Management API**: REST endpoints for listing, switching, and monitoring models
 
+### MCP (Model Context Protocol) Integration (Fase 12 - Phase 2)
+- **Protocol Layer** (`mcp/protocol.py`): Dataclass-based message types (MCPMessage, MCPRequest, MCPResponse, MCPToolCall), provider config, transport config
+- **Provider Adapters** (`mcp/providers.py`): Unified interface for OpenAI, Anthropic, Google, Custom/Local providers with schema conversion
+- **Registry** (`mcp/registry.py`): Provider registration, model routing, statistics tracking, default provider configuration (dzeck with 15 models)
+- **Client** (`mcp/client.py`): High-level async API for chat/complete/stream with automatic provider routing and retry logic
+- **Server** (`mcp/server.py`): Request handler with REST-compatible methods for all MCP operations
+- **Transport** (`mcp/transport.py`): stdio and HTTP/SSE transport layer support
+- **LLM Integration**: `LLMClient` now initializes MCP Client internally, syncs model switching, exposes MCP stats/health
+- **API Endpoints**: `/api/mcp/status`, `/api/mcp/providers`, `/api/mcp/models`, `/api/mcp/switch`, `/api/mcp/toggle`, `/api/mcp/health`, `/api/mcp/stats`, `/api/mcp/log`, `/api/mcp/complete`, `/api/mcp/chat`, `/api/mcp/stream`
+- **UI Panel**: MCP toggle button in top bar with status indicator, slide-out panel showing providers, stats, and request log
+
 ### Key Design Patterns
 The system is built on principles of asynchronous operations (`async/await`), a strong emphasis on **safety** (command/path blocklists, timeouts, PII detection, RBAC), **self-improvement** through RLHF and meta-learning, **modular tool design**, **configuration-driven behavior**, **auto-cleanup** of resources, and an **extensible skills system**.
 

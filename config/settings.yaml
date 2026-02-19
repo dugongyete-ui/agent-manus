@@ -67,6 +67,32 @@ logging:
   rotation_count: 5
   format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
+mcp:
+  enabled: true
+  default_provider: "dzeck"
+  transport: "http"
+  retry:
+    max_retries: 3
+    base_delay: 1.0
+    max_delay: 15.0
+  providers:
+    dzeck:
+      type: "custom"
+      enabled: true
+      base_url: "https://22f0ee02-5482-4584-a7aa-bb5f61e50c6b-00-iq4otn6awuiy.janeway.replit.dev"
+    openai:
+      type: "openai"
+      enabled: false
+      base_url: "https://api.openai.com/v1"
+    anthropic:
+      type: "anthropic"
+      enabled: false
+      base_url: "https://api.anthropic.com/v1"
+    google:
+      type: "google"
+      enabled: false
+      base_url: "https://generativelanguage.googleapis.com/v1"
+
 data:
   knowledge_base_path: "data/knowledge_base.db"
   user_profiles_path: "data/user_profiles.json"
