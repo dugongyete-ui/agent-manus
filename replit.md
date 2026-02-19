@@ -56,11 +56,14 @@ Preferred communication style: Simple, everyday language.
 ## System Architecture
 
 ### Agent Core (`agent_core/`)
-- **AgentLoop** (`agent_loop.py`): Orchestrates the main loop with states (IDLE → ANALYZING → THINKING → SELECTING → EXECUTING → OBSERVING → COMPLETED). Max iterations: 50.
+- **AgentLoop** (`agent_loop.py`): Orchestrates the main loop with LLM-powered reasoning. Sends context to Dzeck AI API, parses JSON action responses, executes tools, and observes results iteratively. Max iterations: 10.
+- **LLMClient** (`llm_client.py`): Connects to Dzeck AI streaming API (SSE format). Supports streaming and non-streaming chat, system prompts, and multi-message context.
 - **ContextManager** (`context_manager.py`): Manages conversation history with token limits (128K), sliding memory window (20 messages), and auto-summarization (threshold: 15).
+- **KnowledgeBase** (`knowledge_base.py`): SQLite-based persistent memory. Stores knowledge entries (category/key/value), conversation summaries, and tool usage logs with statistics.
+- **UserManager** (`user_manager.py`): JSON-based user profile management with preferences, interaction tracking, and persistence.
 - **Planner** (`planner.py`): Task plans with priorities, statuses (PENDING → IN_PROGRESS → COMPLETED/FAILED/CANCELLED), hierarchical subtasks.
 - **ToolSelector** (`tool_selector.py`): Keyword-based tool selection from a registry of 9 tools.
-- **Main** (`main.py`): CLI entry point using `rich` and `prompt_toolkit`.
+- **Main** (`main.py`): CLI entry point using `rich` and `prompt_toolkit`. Registers all tools, manages user sessions.
 
 ### Tools (`tools/`)
 | Tool | Purpose |
