@@ -1,0 +1,14 @@
+{
+  "profiles": [],
+  "default_preferences": {
+    "language": "id",
+    "theme": "dark",
+    "notification_level": "normal",
+    "auto_save": true,
+    "max_history": 100
+  },
+  "metadata": {
+    "version": "1.0.0",
+    "last_updated": null
+  }
+}
