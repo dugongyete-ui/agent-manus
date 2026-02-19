@@ -45,6 +45,11 @@ from agent_core.agent_loop import AgentLoop, SYSTEM_PROMPT
 from agent_core.llm_client import LLMClient
 from agent_core.knowledge_base import KnowledgeBase
 from agent_core.context_manager import ContextManager
+from agent_core.rlhf_engine import RLHFEngine
+from agent_core.meta_learner import MetaLearner
+from agent_core.security_manager import SecurityManager
+from agent_core.access_control import AccessControl
+from agent_core.data_privacy import DataPrivacyManager
 from tools.shell_tool import ShellTool
 from tools.file_tool import FileTool
 from tools.search_tool import SearchTool
@@ -74,6 +79,11 @@ app.mount("/static", StaticFiles(directory=os.path.join(web_dir, "static")), nam
 
 llm_client = LLMClient()
 knowledge_base = KnowledgeBase()
+rlhf_engine = RLHFEngine()
+meta_learner = MetaLearner()
+security_manager = SecurityManager()
+access_control = AccessControl()
+data_privacy = DataPrivacyManager()
 
 agent_loop = None
 def get_agent():
@@ -650,6 +660,209 @@ async def api_search_skills(query: str):
     if not tool:
         return {"results": []}
     return {"results": tool.search_skills(query)}
+
+
+@app.post("/api/learning/feedback")
+async def api_learning_feedback(request: Request):
+    try:
+        body = await request.json()
+        result = rlhf_engine.record_feedback(
+            session_id=body.get("session_id", ""),
+            message_id=body.get("message_id", ""),
+            feedback_type=body.get("feedback_type", "rating"),
+            value=body.get("value", 0),
+            context=body.get("context"),
+            comment=body.get("comment", ""),
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error recording feedback: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/stats")
+async def api_learning_stats():
+    try:
+        return rlhf_engine.get_feedback_stats()
+    except Exception as e:
+        logger.error(f"Error getting feedback stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/insights")
+async def api_learning_insights():
+    try:
+        return rlhf_engine.get_learning_insights()
+    except Exception as e:
+        logger.error(f"Error getting learning insights: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/tool-preferences")
+async def api_learning_tool_preferences(context: str = "general"):
+    try:
+        agent = get_agent()
+        tool_names = list(agent._tool_instances.keys())
+        return {"preferences": rlhf_engine.get_tool_preference(tool_names, context)}
+    except Exception as e:
+        logger.error(f"Error getting tool preferences: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/meta/summary")
+async def api_meta_learning_summary():
+    try:
+        return meta_learner.get_learning_summary()
+    except Exception as e:
+        logger.error(f"Error getting learning summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/meta/performance")
+async def api_meta_learning_performance():
+    try:
+        return meta_learner.get_performance_report()
+    except Exception as e:
+        logger.error(f"Error getting performance report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/learning/meta/strategy")
+async def api_meta_learning_strategy(task: str = ""):
+    try:
+        return meta_learner.get_strategy_for_task(task)
+    except Exception as e:
+        logger.error(f"Error getting strategy: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/stats")
+async def api_security_stats():
+    try:
+        return security_manager.get_security_stats()
+    except Exception as e:
+        logger.error(f"Error getting security stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/audit")
+async def api_security_audit():
+    try:
+        return security_manager.run_audit()
+    except Exception as e:
+        logger.error(f"Error running security audit: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/events")
+async def api_security_events(limit: int = 50, level: str = None):
+    try:
+        return {"events": security_manager.get_recent_events(limit=limit, threat_level=level)}
+    except Exception as e:
+        logger.error(f"Error getting security events: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/events/{event_id}/resolve")
+async def api_security_resolve_event(event_id: str):
+    try:
+        success = security_manager.resolve_event(event_id)
+        if success:
+            return {"ok": True, "event_id": event_id}
+        raise HTTPException(status_code=404, detail="Event tidak ditemukan")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resolving event: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/validate-command")
+async def api_security_validate_command(request: Request):
+    try:
+        body = await request.json()
+        command = body.get("command", "")
+        return security_manager.validate_command(command)
+    except Exception as e:
+        logger.error(f"Error validating command: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/validate-path")
+async def api_security_validate_path(request: Request):
+    try:
+        body = await request.json()
+        path = body.get("path", "")
+        operation = body.get("operation", "read")
+        return security_manager.validate_file_path(path, operation)
+    except Exception as e:
+        logger.error(f"Error validating path: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/rbac/stats")
+async def api_rbac_stats():
+    try:
+        return access_control.get_rbac_stats()
+    except Exception as e:
+        logger.error(f"Error getting RBAC stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/rbac/accounts")
+async def api_rbac_accounts():
+    try:
+        return {"accounts": access_control.list_accounts()}
+    except Exception as e:
+        logger.error(f"Error listing accounts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/rbac/login")
+async def api_rbac_login(request: Request):
+    try:
+        body = await request.json()
+        username = body.get("username", "")
+        password = body.get("password", "")
+        result = access_control.authenticate(username, password)
+        if result is None:
+            raise HTTPException(status_code=401, detail="Autentikasi gagal")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error during login: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/privacy/stats")
+async def api_privacy_stats():
+    try:
+        return data_privacy.get_privacy_stats()
+    except Exception as e:
+        logger.error(f"Error getting privacy stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/security/privacy/compliance")
+async def api_privacy_compliance():
+    try:
+        return data_privacy.get_compliance_report()
+    except Exception as e:
+        logger.error(f"Error getting compliance report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/security/privacy/detect-pii")
+async def api_privacy_detect_pii(request: Request):
+    try:
+        body = await request.json()
+        text = body.get("text", "")
+        findings = data_privacy.detect_pii(text)
+        return {"findings": findings, "total": len(findings)}
+    except Exception as e:
+        logger.error(f"Error detecting PII: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
