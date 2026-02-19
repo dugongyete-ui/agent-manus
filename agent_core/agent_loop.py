@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang membantu pengguna menyelesaikan tugas.
 
 Kamu memiliki akses ke alat-alat berikut:
-1. **shell_tool** - Menjalankan perintah shell/terminal (ls, cat, grep, python3, node, pip, npm, dll)
+1. **shell_tool** - Menjalankan perintah shell/terminal (ls, cat, grep, python3, node, pip, npm, dll). Mendukung run_code untuk eksekusi kode langsung.
 2. **file_tool** - Operasi file: read, write, edit, append, view, list, delete, copy, move
-3. **browser_tool** - Navigasi web, screenshot, klik elemen
-4. **search_tool** - Pencarian informasi dari internet
+3. **browser_tool** - Navigasi web dengan Playwright: navigate, screenshot, click, fill_form, type_text, extract_text, extract_links, execute_javascript, scroll, go_back, go_forward, wait_for_element
+4. **search_tool** - Pencarian web via DuckDuckGo. Juga bisa fetch halaman web: fetch_page_content
 5. **generate_tool** - Generasi media (gambar, video, audio)
 6. **slides_tool** - Pembuatan presentasi
-7. **webdev_tool** - Scaffolding proyek web (React, Vue, Flask, Express, Next.js)
+7. **webdev_tool** - Scaffolding proyek web (React, Vue, Flask, Express, Next.js, FastAPI). Mendukung install_dependencies, add_dependency, build_project
 8. **schedule_tool** - Penjadwalan tugas
 9. **message_tool** - Komunikasi dengan pengguna
 
@@ -39,9 +39,11 @@ Jika perlu beberapa langkah:
 {"action": "multi_step", "steps": [{"tool": "nama_tool", "params": {"key": "value"}}], "reasoning": "alasan"}
 
 Parameter yang tersedia untuk setiap tool:
-- shell_tool: {"command": "perintah shell"}
+- shell_tool: {"command": "perintah"} atau {"action": "run_code", "code": "kode", "runtime": "python3|node|bash"}
 - file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "teks lama", "new_text": "teks baru", "start_line": 1, "end_line": 10}
-- search_tool: {"query": "kata kunci pencarian"}
+- browser_tool: {"action": "navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll|go_back|wait_for", "url": "url", "selector": "css_selector", "value": "nilai", "script": "js_code", "direction": "up|down|top|bottom", "path": "screenshot.png"}
+- search_tool: {"query": "kata kunci"} atau {"action": "fetch", "url": "url"}
+- webdev_tool: {"action": "init|install_deps|add_dep|build", "name": "nama", "framework": "react|vue|flask|express|nextjs|fastapi", "packages": ["pkg1"], "project_dir": "dir"}
 - message_tool: {"content": "pesan", "type": "info|warning|success|error"}
 """
 
@@ -165,22 +167,37 @@ class AgentLoop:
         start_time = time.time()
         try:
             if tool_name == "shell_tool":
-                command = params.get("command", "")
-                if command:
-                    result = await tool.run_command(command)
+                action = params.get("action", "")
+                if action == "run_code":
+                    code = params.get("code", "")
+                    runtime = params.get("runtime", "python3")
+                    result = await tool.run_code(code, runtime) if code else "Tidak ada kode yang diberikan."
                 else:
-                    result = "Tidak ada perintah yang diberikan."
+                    command = params.get("command", "")
+                    result = await tool.run_command(command) if command else "Tidak ada perintah yang diberikan."
 
             elif tool_name == "file_tool":
                 result = await self._execute_file_tool(tool, params)
 
             elif tool_name == "search_tool":
-                query = params.get("query", "")
-                if query:
-                    results = await tool.search(query)
-                    result = tool._format_results(results) if results else "Tidak ada hasil."
+                action = params.get("action", "")
+                if action == "fetch":
+                    url = params.get("url", "")
+                    if url:
+                        fetch_result = await tool.fetch_page_content(url)
+                        if fetch_result.get("success"):
+                            result = f"Judul: {fetch_result.get('title', '')}\n\n{fetch_result.get('text', '')[:5000]}"
+                        else:
+                            result = f"Gagal fetch: {fetch_result.get('error', 'unknown')}"
+                    else:
+                        result = "Tidak ada URL untuk fetch."
                 else:
-                    result = "Tidak ada query pencarian."
+                    query = params.get("query", "")
+                    if query:
+                        results = await tool.search(query)
+                        result = tool._format_results(results) if results else "Tidak ada hasil."
+                    else:
+                        result = "Tidak ada query pencarian."
 
             elif tool_name == "message_tool":
                 content = params.get("content", "")
@@ -192,18 +209,10 @@ class AgentLoop:
                     result = "Tidak ada konten pesan."
 
             elif tool_name == "browser_tool":
-                url = params.get("url", "")
-                if url:
-                    nav_result = await tool.navigate(url)
-                    result = nav_result.get("message", str(nav_result))
-                else:
-                    result = "Tidak ada URL yang diberikan."
+                result = await self._execute_browser_tool(tool, params)
 
             elif tool_name == "webdev_tool":
-                name = params.get("name", "my_project")
-                framework = params.get("framework", "flask")
-                init_result = tool.init_project(name, framework)
-                result = json.dumps(init_result, ensure_ascii=False)
+                result = await self._execute_webdev_tool(tool, params)
 
             elif tool_name == "generate_tool":
                 media_type = params.get("type", "image")
@@ -236,6 +245,106 @@ class AgentLoop:
             self.knowledge_base.log_tool_usage(tool_name, str(params)[:100], str(params)[:200], error_msg, False, duration_ms)
             logger.error(error_msg)
             return error_msg
+
+    async def _execute_browser_tool(self, tool, params: dict) -> str:
+        action = params.get("action", "navigate")
+
+        if action == "navigate":
+            url = params.get("url", "")
+            if not url:
+                return "Tidak ada URL yang diberikan."
+            r = await tool.navigate(url)
+            return r.get("message", str(r))
+        elif action == "screenshot":
+            path = params.get("path", "screenshot.png")
+            full_page = params.get("full_page", False)
+            r = await tool.screenshot(path, full_page)
+            return r.get("message", str(r))
+        elif action == "click":
+            selector = params.get("selector", "")
+            if not selector:
+                return "Selector tidak diberikan."
+            r = await tool.click_element(selector)
+            return r.get("message", str(r))
+        elif action == "fill":
+            selector = params.get("selector", "")
+            value = params.get("value", "")
+            r = await tool.fill_form(selector, value)
+            return r.get("message", str(r))
+        elif action == "type":
+            selector = params.get("selector", "")
+            text = params.get("value", "")
+            r = await tool.type_text(selector, text)
+            return r.get("message", str(r))
+        elif action == "extract_text":
+            selector = params.get("selector")
+            r = await tool.extract_text(selector)
+            if r.get("success"):
+                return r.get("text", "") or "\n".join(r.get("texts", []))
+            return f"Gagal: {r.get('error', '')}"
+        elif action == "extract_links":
+            r = await tool.extract_links()
+            if r.get("success"):
+                links = r.get("links", [])[:20]
+                return "\n".join([f"- [{l['text'][:80]}]({l['href']})" for l in links])
+            return f"Gagal: {r.get('error', '')}"
+        elif action == "execute_js":
+            script = params.get("script", "")
+            r = await tool.execute_javascript(script)
+            return r.get("message", str(r))
+        elif action == "scroll":
+            direction = params.get("direction", "down")
+            amount = params.get("amount", 500)
+            r = await tool.scroll(direction, amount)
+            return f"Scroll {direction}" if r.get("success") else str(r)
+        elif action == "go_back":
+            r = await tool.go_back()
+            return r.get("message", str(r))
+        elif action == "go_forward":
+            r = await tool.go_forward()
+            return r.get("message", str(r))
+        elif action == "wait_for":
+            selector = params.get("selector", "")
+            r = await tool.wait_for_element(selector)
+            return r.get("message", str(r))
+        else:
+            url = params.get("url", "")
+            if url:
+                r = await tool.navigate(url)
+                return r.get("message", str(r))
+            return f"Aksi browser tidak dikenal: {action}"
+
+    async def _execute_webdev_tool(self, tool, params: dict) -> str:
+        action = params.get("action", "init")
+
+        if action == "init":
+            name = params.get("name", "my_project")
+            framework = params.get("framework", "flask")
+            output_dir = params.get("output_dir", ".")
+            r = tool.init_project(name, framework, output_dir)
+            return json.dumps(r, ensure_ascii=False)
+        elif action == "install_deps":
+            project_dir = params.get("project_dir", ".")
+            manager = params.get("manager", "npm")
+            r = await tool.install_dependencies(project_dir, manager)
+            return json.dumps(r, ensure_ascii=False)
+        elif action == "add_dep":
+            project_dir = params.get("project_dir", ".")
+            packages = params.get("packages", [])
+            manager = params.get("manager", "npm")
+            dev = params.get("dev", False)
+            r = await tool.add_dependency(project_dir, packages, manager, dev)
+            return json.dumps(r, ensure_ascii=False)
+        elif action == "build":
+            project_dir = params.get("project_dir", ".")
+            framework = params.get("framework", "")
+            r = await tool.build_project(project_dir, framework)
+            return json.dumps(r, ensure_ascii=False)
+        elif action == "list_frameworks":
+            frameworks = tool.list_frameworks()
+            return json.dumps(frameworks, ensure_ascii=False)
+        else:
+            return f"Aksi webdev tidak dikenal: {action}. Gunakan: init, install_deps, add_dep, build, list_frameworks"
 
     async def _execute_file_tool(self, tool, params: dict) -> str:
         operation = params.get("operation", "read")
@@ -384,4 +493,15 @@ class AgentLoop:
         return "\n".join(lines)
 
     async def cleanup(self):
+        for tool_name, tool in self._tool_instances.items():
+            if hasattr(tool, 'close'):
+                try:
+                    await tool.close()
+                except Exception as e:
+                    logger.debug(f"Error menutup {tool_name}: {e}")
+            if hasattr(tool, 'cleanup'):
+                try:
+                    await tool.cleanup()
+                except Exception as e:
+                    logger.debug(f"Error cleanup {tool_name}: {e}")
         await self.llm.close()

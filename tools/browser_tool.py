@@ -23,10 +23,43 @@ class BrowserTool:
         self._page: Any = None
         self._initialized = False
 
+    _lib_paths_configured = False
+
+    @classmethod
+    def _setup_library_paths(cls):
+        if cls._lib_paths_configured:
+            return
+        cls._lib_paths_configured = True
+        try:
+            extra_paths = set()
+            known_lib = "/nix/store/24w3s75aa2lrvvxsybficn8y3zxd27kp-mesa-libgbm-25.1.0/lib"
+            if os.path.isdir(known_lib):
+                extra_paths.add(known_lib)
+            else:
+                import ctypes.util
+                if not ctypes.util.find_library("gbm"):
+                    for entry in os.scandir("/nix/store"):
+                        if "mesa-libgbm" in entry.name and entry.is_dir():
+                            lib_dir = os.path.join(entry.path, "lib")
+                            if os.path.isdir(lib_dir):
+                                extra_paths.add(lib_dir)
+                                break
+
+            if extra_paths:
+                current = os.environ.get("LD_LIBRARY_PATH", "")
+                combined = ":".join(extra_paths)
+                if current:
+                    combined = combined + ":" + current
+                os.environ["LD_LIBRARY_PATH"] = combined
+                logger.info("Library paths configured for browser")
+        except Exception as e:
+            logger.warning(f"Could not auto-configure library paths: {e}")
+
     async def _ensure_browser(self):
         if self._initialized and self._page and not self._page.is_closed():
             return
         try:
+            self._setup_library_paths()
             from playwright.async_api import async_playwright
             self._playwright = await async_playwright().start()
             self._browser = await self._playwright.chromium.launch(
