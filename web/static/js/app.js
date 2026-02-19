@@ -2,6 +2,9 @@ const API = '';
 let currentSessionId = null;
 let isLoading = false;
 let streamAbortController = null;
+let currentModel = null;
+let allModels = [];
+let activeCategory = null;
 
 async function api(path, options = {}) {
     const res = await fetch(`${API}${path}`, {
@@ -123,10 +126,13 @@ async function sendMessage() {
 async function sendStreamingMessage(message) {
     streamAbortController = new AbortController();
 
+    const payload = { message };
+    if (currentModel) payload.model = currentModel;
+
     const response = await fetch(`${API}/api/sessions/${currentSessionId}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify(payload),
         signal: streamAbortController.signal,
     });
 
@@ -430,7 +436,116 @@ function closeCodeViewer() {
     document.getElementById('codeModal').classList.add('hidden');
 }
 
+async function loadModels(category = null) {
+    try {
+        const url = category ? `/api/models?category=${category}` : '/api/models';
+        const data = await api(url);
+        allModels = data.models || [];
+        currentModel = data.current ? data.current.model : null;
+
+        const nameEl = document.getElementById('currentModelName');
+        if (nameEl && data.current) {
+            nameEl.textContent = data.current.name || data.current.model;
+        }
+
+        renderCategoryTabs(data.categories || {}, category);
+        renderModelList(allModels, data.current ? data.current.model : null);
+        renderModelStats(data);
+    } catch (err) {
+        console.error('Failed to load models:', err);
+    }
+}
+
+function renderCategoryTabs(categories, active) {
+    const container = document.getElementById('modelCategoryTabs');
+    if (!container) return;
+
+    const allTab = `<button class="model-cat-tab ${!active ? 'active' : ''}" onclick="filterModels(null)">Semua</button>`;
+    const tabs = Object.entries(categories).map(([key, desc]) =>
+        `<button class="model-cat-tab ${active === key ? 'active' : ''}" onclick="filterModels('${key}')" title="${escapeHtml(desc)}">${key}</button>`
+    ).join('');
+    container.innerHTML = allTab + tabs;
+}
+
+function renderModelList(models, activeModel) {
+    const container = document.getElementById('modelList');
+    if (!container) return;
+
+    const categoryIcons = {
+        thinking: 'ri-brain-line',
+        reasoning: 'ri-lightbulb-flash-line',
+        general: 'ri-sparkling-line',
+        research: 'ri-search-eye-line',
+        labs: 'ri-flask-line',
+    };
+
+    container.innerHTML = models.map(m => `
+        <div class="model-item ${m.id === activeModel ? 'active' : ''}" onclick="switchModel('${m.id}')">
+            <div class="model-item-icon ${m.category}">
+                <i class="${categoryIcons[m.category] || 'ri-cpu-line'}"></i>
+            </div>
+            <div class="model-item-info">
+                <div class="model-item-name">${escapeHtml(m.name)}</div>
+                <div class="model-item-desc">${escapeHtml(m.description)}</div>
+            </div>
+            <span class="model-item-badge">${m.id === activeModel ? 'Active' : m.category}</span>
+        </div>
+    `).join('');
+}
+
+function renderModelStats(data) {
+    const container = document.getElementById('modelStats');
+    if (!container) return;
+    const total = (data.models || []).length;
+    container.textContent = `${total} model tersedia`;
+}
+
+function toggleModelDropdown() {
+    const dropdown = document.getElementById('modelDropdown');
+    if (!dropdown) return;
+    const isHidden = dropdown.classList.contains('hidden');
+    if (isHidden) {
+        dropdown.classList.remove('hidden');
+        loadModels(activeCategory);
+    } else {
+        dropdown.classList.add('hidden');
+    }
+}
+
+function filterModels(category) {
+    activeCategory = category;
+    loadModels(category);
+}
+
+async function switchModel(modelId) {
+    try {
+        const data = await api('/api/models/switch', {
+            method: 'POST',
+            body: JSON.stringify({ model: modelId }),
+        });
+        if (data.ok && data.current) {
+            currentModel = data.current.model;
+            const nameEl = document.getElementById('currentModelName');
+            if (nameEl) nameEl.textContent = data.current.name || data.current.model;
+            document.getElementById('modelDropdown')?.classList.add('hidden');
+            updateStatusBar(`Model: ${data.current.name}`);
+            loadModels(activeCategory);
+        }
+    } catch (err) {
+        console.error('Failed to switch model:', err);
+    }
+}
+
+document.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('modelDropdown');
+    const btn = document.getElementById('modelSelectorBtn');
+    if (dropdown && btn && !dropdown.contains(e.target) && !btn.contains(e.target)) {
+        dropdown.classList.add('hidden');
+    }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
     loadSessions();
+    loadModels();
     document.getElementById('messageInput').focus();
 });
