@@ -443,6 +443,7 @@ class AgentLoop:
         self._current_tools_used = []
         self._current_plan = None
         self._plan_step_index = 0
+        self._retry_done = False
         start_time = time.time()
 
         try:
@@ -508,6 +509,28 @@ class AgentLoop:
                 logger.info(f"LLM response received ({len(raw_response)} chars)")
 
                 action = self._parse_llm_response(raw_response, user_input)
+
+                if action["type"] == "respond" and self.iteration_count == 1 and not hasattr(self, '_retry_done'):
+                    intent = detect_intent(user_input)
+                    if intent and intent.get("type") == "use_tool":
+                        logger.info(f"JSON parse yielded 'respond' but intent says tool needed. Retrying with correction prompt...")
+                        retry_prompt = (
+                            f"Your previous response was plain text, but the user's request requires a tool action.\n"
+                            f"User request: {user_input}\n"
+                            f"You MUST respond with ONLY a valid JSON object.\n"
+                            f"The correct tool is likely: {intent.get('tool', 'unknown')}\n"
+                            f"Example: {{\"action\":\"use_tool\",\"tool\":\"{intent.get('tool', 'shell_tool')}\",\"params\":{{...}}}}\n"
+                            f"Respond with ONLY the JSON. No other text."
+                        )
+                        retry_response = await self.llm.chat(retry_prompt)
+                        retry_action = self._parse_llm_response(retry_response, user_input)
+                        if retry_action["type"] != "respond":
+                            action = retry_action
+                            logger.info(f"Retry succeeded: got action type '{action['type']}'")
+                        else:
+                            action = intent
+                            logger.info(f"Retry still plain text, using intent detection directly")
+                        self._retry_done = True
 
                 if action["type"] == "plan":
                     goal = action.get("goal", user_input)
@@ -969,6 +992,68 @@ class AgentLoop:
                 parts.append(f"Assistant: {content}")
         return "\n\n".join(parts)
 
+    def _fix_json_string(self, raw: str) -> str:
+        fixed = raw.strip()
+
+        fixed = re.sub(r'```json\s*', '', fixed)
+        fixed = re.sub(r'```\s*$', '', fixed)
+        fixed = re.sub(r'^```\s*', '', fixed)
+
+        fixed = re.sub(r',\s*}', '}', fixed)
+        fixed = re.sub(r',\s*]', ']', fixed)
+
+        fixed = re.sub(r'//[^\n]*', '', fixed)
+
+        fixed = re.sub(r"(?<=[{,:\[]\s*)(\b(?:action|tool|params|type|command|query|url|path|operation|content|message|thought|goal|steps|name|action|prompt|width|height|format|selector|value|script|runtime|code|interval|framework|output_dir|cron_expression|callback|description|capabilities|old_text|new_text|dest|pattern|directory|start_line|end_line|direction|amount|full_page|dev|manager|packages|project_dir|slides|author|theme|layout|delay_seconds)\b)(?=\s*:)", r'"\1"', fixed)
+
+        fixed = re.sub(r"(?<=:\s*)'([^']*)'", r'"\1"', fixed)
+
+        if fixed.startswith('{') and not fixed.endswith('}'):
+            open_braces = fixed.count('{')
+            close_braces = fixed.count('}')
+            if open_braces > close_braces:
+                fixed += '}' * (open_braces - close_braces)
+
+        if fixed.count('[') > fixed.count(']'):
+            fixed += ']' * (fixed.count('[') - fixed.count(']'))
+
+        return fixed
+
+    def _extract_tool_from_text(self, raw: str, user_input: str = "") -> dict | None:
+        VALID_TOOLS = {"shell_tool", "file_tool", "browser_tool", "search_tool", "generate_tool",
+                       "slides_tool", "webdev_tool", "schedule_tool", "message_tool", "skill_manager"}
+
+        tool_pattern = re.search(
+            r'(?:menggunakan|gunakan|use|call|jalankan|run|execute|using)\s+(shell_tool|file_tool|browser_tool|search_tool|generate_tool|slides_tool|webdev_tool|schedule_tool|message_tool|skill_manager)',
+            raw, re.IGNORECASE
+        )
+        if tool_pattern:
+            tool_name = tool_pattern.group(1).lower()
+            if tool_name in VALID_TOOLS:
+                if user_input:
+                    intent = detect_intent(user_input)
+                    if intent and intent.get("tool") == tool_name:
+                        return intent
+                return {"type": "use_tool", "tool": tool_name, "params": {}}
+
+        command_match = re.search(r'(?:run|execute|jalankan)\s+(?:command\s+)?[`"\']([^`"\']+)[`"\']', raw, re.IGNORECASE)
+        if command_match:
+            return {"type": "use_tool", "tool": "shell_tool", "params": {"command": command_match.group(1)}}
+
+        url_match = re.search(r'(?:navigate|open|buka|go to)\s+(?:to\s+)?(https?://[^\s"\'<>]+)', raw, re.IGNORECASE)
+        if url_match:
+            return {"type": "use_tool", "tool": "browser_tool", "params": {"action": "navigate", "url": url_match.group(1)}}
+
+        search_match = re.search(r'(?:search|cari|look up)\s+(?:for\s+)?["\']([^"\']+)["\']', raw, re.IGNORECASE)
+        if search_match:
+            return {"type": "use_tool", "tool": "search_tool", "params": {"query": search_match.group(1)}}
+
+        file_read_match = re.search(r'(?:read|baca)\s+(?:file\s+)?["\']?([^\s"\']+\.\w+)["\']?', raw, re.IGNORECASE)
+        if file_read_match:
+            return {"type": "use_tool", "tool": "file_tool", "params": {"operation": "read", "path": file_read_match.group(1)}}
+
+        return None
+
     def _parse_llm_response(self, raw: str, user_input: str = "") -> dict:
         raw = raw.strip()
 
@@ -1009,11 +1094,20 @@ class AgentLoop:
             else:
                 i += 1
 
+        all_candidates = []
         for json_str in json_candidates:
-            try:
-                json_str = re.sub(r',\s*}', '}', json_str)
-                json_str = re.sub(r',\s*]', ']', json_str)
+            all_candidates.append(json_str)
+            fixed = self._fix_json_string(json_str)
+            if fixed != json_str:
+                all_candidates.append(fixed)
 
+        if not all_candidates:
+            fixed_raw = self._fix_json_string(raw)
+            if fixed_raw.startswith('{'):
+                all_candidates.append(fixed_raw)
+
+        for json_str in all_candidates:
+            try:
                 parsed = json.loads(json_str)
                 if not isinstance(parsed, dict):
                     continue
@@ -1031,11 +1125,13 @@ class AgentLoop:
                         "thought": parsed.get("thought", ""),
                     }
                 elif action == "use_tool":
-                    return {
-                        "type": "use_tool",
-                        "tool": parsed.get("tool", ""),
-                        "params": parsed.get("params", {}),
-                    }
+                    tool = parsed.get("tool", "")
+                    if tool:
+                        return {
+                            "type": "use_tool",
+                            "tool": tool,
+                            "params": parsed.get("params", {}),
+                        }
                 elif action == "multi_step":
                     return {
                         "type": "multi_step",
@@ -1108,21 +1204,10 @@ class AgentLoop:
             except (json.JSONDecodeError, ValueError):
                 continue
 
-        tool_pattern = re.search(
-            r'(?:menggunakan|gunakan|use|call|jalankan|run)\s+(shell_tool|file_tool|browser_tool|search_tool|generate_tool|slides_tool|webdev_tool|schedule_tool|message_tool|skill_manager)',
-            raw, re.IGNORECASE
-        )
-        if tool_pattern:
-            tool_name = tool_pattern.group(1).lower()
-            if user_input:
-                intent = detect_intent(user_input)
-                if intent and intent.get("tool") == tool_name:
-                    return intent
-            return {
-                "type": "use_tool",
-                "tool": tool_name,
-                "params": {},
-            }
+        text_tool = self._extract_tool_from_text(raw, user_input)
+        if text_tool:
+            logger.info(f"Extracted tool from text: {text_tool.get('tool', text_tool.get('type'))}")
+            return text_tool
 
         refusal_patterns = [
             r"(?:saya|aku)\s+(?:tidak\s+)?(?:bisa|dapat|mampu)\s+(?:tidak\s+)?(?:langsung\s+)?(?:membuka|menjalankan|mengeksekusi|mengakses)",

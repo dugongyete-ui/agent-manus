@@ -132,12 +132,18 @@
       "action_context": "execution",
       "reward": 1.2,
       "timestamp": 1771514609.6865249
+    },
+    {
+      "tool_name": "search_tool",
+      "action_context": "execution",
+      "reward": 1.2,
+      "timestamp": 1771514621.5159771
     }
   ],
   "quality_scores": [],
   "metadata": {
-    "last_updated": 1771514609.6866477,
+    "last_updated": 1771514621.5160909,
     "total_feedback": 0,
-    "total_rewards": 22
+    "total_rewards": 23
   }
 }
