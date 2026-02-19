@@ -72,8 +72,8 @@ class RuntimeExecutor:
             tmp_file.write(code)
             tmp_path = tmp_file.name
 
+        start_time = time.time()
         try:
-            start_time = time.time()
             cmd = f"{rt_config['command']} {tmp_path}"
 
             process = await asyncio.create_subprocess_shell(
@@ -91,7 +91,7 @@ class RuntimeExecutor:
                 code=code,
                 stdout=stdout.decode("utf-8", errors="replace").strip(),
                 stderr=stderr.decode("utf-8", errors="replace").strip(),
-                return_code=process.returncode,
+                return_code=process.returncode or 0,
                 duration=duration,
             )
 
@@ -100,7 +100,7 @@ class RuntimeExecutor:
             return result
 
         except asyncio.TimeoutError:
-            duration = time.time() - start_time
+            duration = time.time() - start_time  # noqa: F841 - start_time always bound here
             result = ExecutionResult(
                 runtime=runtime, code=code,
                 stdout="", stderr=f"Eksekusi timeout setelah {timeout}s",

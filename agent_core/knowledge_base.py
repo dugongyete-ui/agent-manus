@@ -84,7 +84,7 @@ class KnowledgeBase:
                 )
                 conn.commit()
                 logger.debug(f"Knowledge disimpan: [{category}] {key}")
-                return cursor.lastrowid
+                return cursor.lastrowid or 0
 
     def retrieve(self, category: str, key: str) -> Optional[dict]:
         with self._connect() as conn:
