@@ -8,6 +8,10 @@ The codebase is primarily in Indonesian (variable names, comments, log messages)
 
 ## Recent Changes
 
+- **2026-02-19**: Wave 4 Phase 5 completed - Multimodal capabilities:
+  - `generate_tool.py`: Full image generation (Pillow with gradient/shapes/text), SVG generation, chart generation (bar/pie/line), audio synthesis (notification/melody/ambient/tone), video generation (frame animation with ffmpeg/GIF fallback), document generation (HTML/Markdown/text)
+  - `file_tool.py`: Multimodal document understanding - PDF extraction (PyPDF2), image analysis (dimensions/mode/brightness/histogram/thumbnail), audio analysis (mutagen/wave metadata), code analysis (function/class/import extraction), CSV/JSON/YAML/XML parsing, file search, directory tree, binary read/write, base64 encoding
+  - UI responsive fix: dvh units, proper flex layout, mobile breakpoints (768px/400px), compact welcome screen on small screens
 - **2026-02-19**: Wave 3 completed - Full web UI with dark theme (purple accent), FastAPI backend with all endpoints, PostgreSQL conversation memory (sessions/messages/tool_executions), sidebar chat list, main chat panel, right panel with Activity/Files/Tools tabs, code viewer modal.
 - **2026-02-19**: Wave 2 completed - browser_tool.py now uses real Playwright/Chromium, search_tool.py uses DuckDuckGo scraping, shell_tool.py enhanced with security blocklists and run_code(), webdev_tool.py expanded with 6 frameworks and dependency management. All tools integrated into agent_loop.py.
 - **2026-02-19**: Wave 1 verified - all core modules (agent_loop, context_manager, knowledge_base, llm_client, planner, tool_selector, user_manager) tested and working. 9 tools and sandbox env all importable and functional.
@@ -87,10 +91,10 @@ Preferred communication style: Simple, everyday language.
 | Tool | Purpose | Implementation |
 |------|---------|----------------|
 | `ShellTool` | Shell commands + code execution | Security blocklists, run_code() for Python/Node/Bash/Ruby/PHP, concurrent process limits, timeout handling |
-| `FileTool` | File CRUD with path validation | Read, write, edit, append, view, list, delete, copy, move with size limits |
+| `FileTool` | File CRUD + multimodal analysis | Read/write/edit + analyze_file (PDF/image/audio/code/data), extract_pdf_text, get_image_info/base64, search_files, directory_tree |
 | `BrowserTool` | Full browser automation | Playwright/Chromium: navigate, screenshot, click, fill, type, extract_text, extract_links, execute_js, scroll, go_back/forward, wait_for_element, cookie management |
 | `SearchTool` | Web search + page fetching | DuckDuckGo HTML/Lite scraping, result caching (1hr TTL), fetch_page_content with BeautifulSoup, multi_search |
-| `GenerateTool` | Media generation | Image, video, audio generation (placeholder) |
+| `GenerateTool` | Multimodal media generation | Image (Pillow), SVG, charts (bar/pie/line), audio (WAV synthesis), video (frame animation), documents (HTML/MD/TXT) |
 | `SlidesTool` | Presentation creation | Slide/layout models with content management |
 | `WebDevTool` | Project scaffolding | React, Vue, Flask, Express, Next.js, FastAPI templates + install_dependencies, add_dependency, build_project |
 | `ScheduleTool` | Task scheduling | Intervals, callbacks, task management |
@@ -118,6 +122,9 @@ Preferred communication style: Simple, everyday language.
 - `prompt-toolkit` -- Interactive CLI input
 - `playwright` -- Browser automation (Chromium)
 - `beautifulsoup4` -- HTML parsing for search results
+- `Pillow` -- Image generation and analysis
+- `PyPDF2` -- PDF text extraction and metadata
+- `mutagen` -- Audio file metadata analysis
 
 ### System Dependencies (Nix)
 - `nspr`, `nss`, `atk`, `cups`, `mesa`, `pango`, `alsa-lib`, `libdrm`, `libxkbcommon` -- Required for Playwright Chromium
