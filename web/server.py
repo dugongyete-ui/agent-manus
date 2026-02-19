@@ -223,45 +223,68 @@ async def api_chat(session_id: str, request: Request):
         max_iterations = agent.max_iterations
         final_response = ""
 
-        for iteration in range(max_iterations):
-            agent.iteration_count = iteration + 1
-            context = agent.context_manager.get_context_window()
-            llm_input = agent._build_llm_prompt(context)
-
-            raw_response = await agent.llm.chat(llm_input)
-            action = agent._parse_llm_response(raw_response)
-
-            if action["type"] == "respond":
-                final_response = action["message"]
-                break
-
-            elif action["type"] == "use_tool":
-                tool_name = action["tool"]
-                params = action.get("params", {})
+        intent_bypass = detect_intent(user_message)
+        if intent_bypass:
+            logger.info(f"Intent bypass aktif: {intent_bypass['type']} -> {intent_bypass.get('tool', 'multi')}")
+            if intent_bypass["type"] == "use_tool":
+                tool_name = intent_bypass["tool"]
+                params = intent_bypass.get("params", {})
                 start_time = time.time()
-
                 result = await agent._execute_tool(tool_name, params)
                 duration_ms = int((time.time() - start_time) * 1000)
-
                 tool_exec = {
-                    "tool": tool_name,
-                    "params": params,
-                    "result": result[:2000],
-                    "duration_ms": duration_ms,
-                    "status": "success"
+                    "tool": tool_name, "params": params,
+                    "result": result[:2000], "duration_ms": duration_ms, "status": "success"
                 }
                 tool_executions.append(tool_exec)
-
                 log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
-
                 observation = f"[Hasil {tool_name}]:\n{result}"
                 agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
                 agent.context_manager.add_message("system", observation)
-
-            elif action["type"] == "multi_step":
-                for step in action.get("steps", []):
+                context = agent.context_manager.get_context_window()
+                summary_prompt = agent._build_llm_prompt(context)
+                summary_prompt += "\n\n[System]: Berikan ringkasan singkat hasil tool di atas untuk user. Respons sebagai teks biasa."
+                final_response = await agent.llm.chat(summary_prompt)
+                if not final_response.strip():
+                    final_response = f"Tool {tool_name} berhasil dijalankan.\n\nHasil:\n{result[:3000]}"
+            elif intent_bypass["type"] == "multi_step":
+                for step in intent_bypass.get("steps", []):
                     tool_name = step.get("tool", "")
                     params = step.get("params", {})
+                    start_time = time.time()
+                    result = await agent._execute_tool(tool_name, params)
+                    duration_ms = int((time.time() - start_time) * 1000)
+                    tool_exec = {
+                        "tool": tool_name, "params": params,
+                        "result": result[:2000], "duration_ms": duration_ms, "status": "success"
+                    }
+                    tool_executions.append(tool_exec)
+                    log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+                all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions]
+                agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                agent.context_manager.add_message("system", "\n".join(all_results))
+                context = agent.context_manager.get_context_window()
+                summary_prompt = agent._build_llm_prompt(context)
+                summary_prompt += "\n\n[System]: Berikan ringkasan singkat semua hasil tool di atas. Respons sebagai teks biasa."
+                final_response = await agent.llm.chat(summary_prompt)
+                if not final_response.strip():
+                    final_response = "Semua tools berhasil dijalankan.\n\n" + "\n".join(all_results[:5])
+        else:
+            for iteration in range(max_iterations):
+                agent.iteration_count = iteration + 1
+                context = agent.context_manager.get_context_window()
+                llm_input = agent._build_llm_prompt(context)
+
+                raw_response = await agent.llm.chat(llm_input)
+                action = agent._parse_llm_response(raw_response, user_input=user_message)
+
+                if action["type"] == "respond":
+                    final_response = action["message"]
+                    break
+
+                elif action["type"] == "use_tool":
+                    tool_name = action["tool"]
+                    params = action.get("params", {})
                     start_time = time.time()
 
                     result = await agent._execute_tool(tool_name, params)
@@ -275,20 +298,44 @@ async def api_chat(session_id: str, request: Request):
                         "status": "success"
                     }
                     tool_executions.append(tool_exec)
+
                     log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
 
-                all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
-                agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
-                agent.context_manager.add_message("system", "\n".join(all_results))
+                    observation = f"[Hasil {tool_name}]:\n{result}"
+                    agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
+                    agent.context_manager.add_message("system", observation)
 
-            elif action["type"] == "error":
-                final_response = action.get("message", raw_response)
-                break
-        else:
-            context = agent.context_manager.get_context_window()
-            prompt = agent._build_llm_prompt(context)
-            prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
-            final_response = await agent.llm.chat(prompt)
+                elif action["type"] == "multi_step":
+                    for step in action.get("steps", []):
+                        tool_name = step.get("tool", "")
+                        params = step.get("params", {})
+                        start_time = time.time()
+
+                        result = await agent._execute_tool(tool_name, params)
+                        duration_ms = int((time.time() - start_time) * 1000)
+
+                        tool_exec = {
+                            "tool": tool_name,
+                            "params": params,
+                            "result": result[:2000],
+                            "duration_ms": duration_ms,
+                            "status": "success"
+                        }
+                        tool_executions.append(tool_exec)
+                        log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+
+                    all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
+                    agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                    agent.context_manager.add_message("system", "\n".join(all_results))
+
+                elif action["type"] == "error":
+                    final_response = action.get("message", raw_response)
+                    break
+            else:
+                context = agent.context_manager.get_context_window()
+                prompt = agent._build_llm_prompt(context)
+                prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
+                final_response = await agent.llm.chat(prompt)
 
         if not final_response:
             final_response = raw_response
@@ -351,60 +398,92 @@ async def api_chat_stream(session_id: str, request: Request):
 
             max_iterations = agent.max_iterations
 
-            for iteration in range(max_iterations):
-                agent.iteration_count = iteration + 1
+            intent_bypass = detect_intent(user_message)
+            skip_llm_loop = False
 
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Menganalisis...'})}\n\n"
+            if intent_bypass:
+                skip_llm_loop = True
+                logger.info(f"Stream intent bypass: {intent_bypass['type']} -> {intent_bypass.get('tool', 'multi')}")
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Intent terdeteksi, menjalankan tool...'})}\n\n"
 
-                context = agent.context_manager.get_context_window()
-                llm_input = agent._build_llm_prompt(context)
-
-                raw_response = ""
-                raw_chunks = []
-                async for chunk in agent.llm.chat_stream(llm_input):
-                    raw_chunks.append(chunk)
-                raw_response = "".join(raw_chunks)
-
-                action = agent._parse_llm_response(raw_response)
-
-                if action["type"] == "respond":
-                    final_response = action["message"]
-                    for char_idx in range(0, len(final_response), 3):
-                        text_chunk = final_response[char_idx:char_idx+3]
-                        yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
-                        await asyncio.sleep(0.01)
-                    break
-
-                elif action["type"] == "use_tool":
-                    tool_name = action["tool"]
-                    params = action.get("params", {})
+                if intent_bypass["type"] == "use_tool":
+                    tool_name = intent_bypass["tool"]
+                    params = intent_bypass.get("params", {})
                     start_time = time.time()
-
                     yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
-
                     result = await agent._execute_tool(tool_name, params)
                     duration_ms = int((time.time() - start_time) * 1000)
-
                     tool_exec = {
-                        "tool": tool_name,
-                        "params": params,
-                        "result": result[:2000],
-                        "duration_ms": duration_ms,
-                        "status": "success"
+                        "tool": tool_name, "params": params,
+                        "result": result[:2000], "duration_ms": duration_ms, "status": "success"
                     }
                     tool_executions.append(tool_exec)
                     log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
-
                     yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
-
                     observation = f"[Hasil {tool_name}]:\n{result}"
                     agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
                     agent.context_manager.add_message("system", observation)
 
-                elif action["type"] == "multi_step":
-                    for step in action.get("steps", []):
+                elif intent_bypass["type"] == "multi_step":
+                    for step in intent_bypass.get("steps", []):
                         tool_name = step.get("tool", "")
                         params = step.get("params", {})
+                        start_time = time.time()
+                        yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+                        result = await agent._execute_tool(tool_name, params)
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        tool_exec = {
+                            "tool": tool_name, "params": params,
+                            "result": result[:2000], "duration_ms": duration_ms, "status": "success"
+                        }
+                        tool_executions.append(tool_exec)
+                        log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                    all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions]
+                    agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                    agent.context_manager.add_message("system", "\n".join(all_results))
+
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun ringkasan...'})}\n\n"
+                context = agent.context_manager.get_context_window()
+                summary_prompt = agent._build_llm_prompt(context)
+                summary_prompt += "\n\n[System]: Berikan ringkasan singkat hasil tool. Respons sebagai teks biasa."
+                async for chunk in agent.llm.chat_stream(summary_prompt):
+                    final_response += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                if not final_response.strip():
+                    fallback_text = "Tool berhasil dijalankan.\n\n" + "\n".join([f"[{te['tool']}]: {te['result'][:500]}" for te in tool_executions])
+                    final_response = fallback_text
+                    for ci in range(0, len(fallback_text), 3):
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': fallback_text[ci:ci+3]})}\n\n"
+
+            if not skip_llm_loop:
+                for iteration in range(max_iterations):
+                    agent.iteration_count = iteration + 1
+
+                    yield f"data: {json.dumps({'type': 'status', 'content': 'Menganalisis...'})}\n\n"
+
+                    context = agent.context_manager.get_context_window()
+                    llm_input = agent._build_llm_prompt(context)
+
+                    raw_response = ""
+                    raw_chunks = []
+                    async for chunk in agent.llm.chat_stream(llm_input):
+                        raw_chunks.append(chunk)
+                    raw_response = "".join(raw_chunks)
+
+                    action = agent._parse_llm_response(raw_response, user_input=user_message)
+
+                    if action["type"] == "respond":
+                        final_response = action["message"]
+                        for char_idx in range(0, len(final_response), 3):
+                            text_chunk = final_response[char_idx:char_idx+3]
+                            yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
+                            await asyncio.sleep(0.01)
+                        break
+
+                    elif action["type"] == "use_tool":
+                        tool_name = action["tool"]
+                        params = action.get("params", {})
                         start_time = time.time()
 
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
@@ -424,23 +503,50 @@ async def api_chat_stream(session_id: str, request: Request):
 
                         yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
 
-                    all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
-                    agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
-                    agent.context_manager.add_message("system", "\n".join(all_results))
+                        observation = f"[Hasil {tool_name}]:\n{result}"
+                        agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
+                        agent.context_manager.add_message("system", observation)
 
-                elif action["type"] == "error":
-                    final_response = action.get("message", raw_response)
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_response})}\n\n"
-                    break
-            else:
-                yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun jawaban akhir...'})}\n\n"
-                context = agent.context_manager.get_context_window()
-                prompt = agent._build_llm_prompt(context)
-                prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
+                    elif action["type"] == "multi_step":
+                        for step in action.get("steps", []):
+                            tool_name = step.get("tool", "")
+                            params = step.get("params", {})
+                            start_time = time.time()
 
-                async for chunk in agent.llm.chat_stream(prompt):
-                    final_response += chunk
-                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+                            yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+
+                            result = await agent._execute_tool(tool_name, params)
+                            duration_ms = int((time.time() - start_time) * 1000)
+
+                            tool_exec = {
+                                "tool": tool_name,
+                                "params": params,
+                                "result": result[:2000],
+                                "duration_ms": duration_ms,
+                                "status": "success"
+                            }
+                            tool_executions.append(tool_exec)
+                            log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+
+                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+
+                        all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
+                        agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                        agent.context_manager.add_message("system", "\n".join(all_results))
+
+                    elif action["type"] == "error":
+                        final_response = action.get("message", raw_response)
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': final_response})}\n\n"
+                        break
+                else:
+                    yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun jawaban akhir...'})}\n\n"
+                    context = agent.context_manager.get_context_window()
+                    prompt = agent._build_llm_prompt(context)
+                    prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
+
+                    async for chunk in agent.llm.chat_stream(prompt):
+                        final_response += chunk
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
 
             if not final_response and raw_response:
                 final_response = raw_response
