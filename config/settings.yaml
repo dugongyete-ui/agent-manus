@@ -1,0 +1,45 @@
+agent:
+  name: "Manus Agent"
+  version: "1.0.0"
+  max_iterations: 50
+  default_timeout: 300
+  log_level: "INFO"
+
+context:
+  max_tokens: 128000
+  memory_window: 20
+  summarization_threshold: 15
+
+sandbox:
+  default_runtime: "python3"
+  max_execution_time: 120
+  allowed_runtimes:
+    - python3
+    - nodejs
+    - bash
+  resource_limits:
+    max_memory_mb: 2048
+    max_cpu_percent: 80
+
+tools:
+  browser:
+    headless: true
+    viewport_width: 1280
+    viewport_height: 720
+    user_agent: "Manus-Agent/1.0"
+  search:
+    max_results: 10
+    safe_search: true
+  shell:
+    default_shell: "/bin/bash"
+    max_output_lines: 1000
+
+logging:
+  directory: "logs"
+  max_file_size_mb: 50
+  rotation_count: 5
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+data:
+  knowledge_base_path: "data/knowledge_base.db"
+  user_profiles_path: "data/user_profiles.json"

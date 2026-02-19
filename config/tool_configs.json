@@ -1,0 +1,59 @@
+{
+  "tools": {
+    "shell_tool": {
+      "enabled": true,
+      "timeout": 120,
+      "allowed_commands": ["ls", "cat", "grep", "find", "echo", "python3", "node", "pip", "npm"],
+      "blocked_commands": ["rm -rf /", "shutdown", "reboot"],
+      "working_directory": "/home/ubuntu/workspace"
+    },
+    "file_tool": {
+      "enabled": true,
+      "max_file_size_mb": 100,
+      "allowed_extensions": ["*"],
+      "blocked_paths": ["/etc/shadow", "/etc/passwd"],
+      "default_encoding": "utf-8"
+    },
+    "browser_tool": {
+      "enabled": true,
+      "headless": true,
+      "timeout": 60,
+      "max_pages": 5,
+      "screenshot_quality": 80,
+      "blocked_domains": []
+    },
+    "search_tool": {
+      "enabled": true,
+      "provider": "external_api",
+      "max_results": 10,
+      "cache_ttl_seconds": 3600
+    },
+    "generate_tool": {
+      "enabled": true,
+      "supported_formats": ["image", "video", "audio"],
+      "max_resolution": "1920x1080",
+      "output_directory": "data/generated"
+    },
+    "slides_tool": {
+      "enabled": true,
+      "default_template": "modern",
+      "output_format": "pptx",
+      "max_slides": 50
+    },
+    "webdev_tool": {
+      "enabled": true,
+      "supported_frameworks": ["react", "vue", "nextjs", "flask", "express"],
+      "default_port": 5000
+    },
+    "schedule_tool": {
+      "enabled": true,
+      "max_scheduled_tasks": 100,
+      "min_interval_seconds": 60
+    },
+    "message_tool": {
+      "enabled": true,
+      "max_message_length": 10000,
+      "support_markdown": true
+    }
+  }
+}
