@@ -54,6 +54,7 @@ from tools.webdev_tool import WebDevTool
 from tools.generate_tool import GenerateTool
 from tools.slides_tool import SlidesTool
 from tools.schedule_tool import ScheduleTool
+from tools.skill_manager import SkillManager
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -93,7 +94,17 @@ def get_agent():
         agent_loop.register_tool("webdev_tool", WebDevTool())
         agent_loop.register_tool("generate_tool", GenerateTool())
         agent_loop.register_tool("slides_tool", SlidesTool())
-        agent_loop.register_tool("schedule_tool", ScheduleTool())
+        schedule_tool = ScheduleTool()
+        skill_manager = SkillManager()
+        agent_loop.register_tool("schedule_tool", schedule_tool)
+        agent_loop.register_tool("skill_manager", skill_manager)
+
+        message_tool = agent_loop._tool_instances.get("message_tool")
+        if message_tool:
+            schedule_tool.set_notification_callback(
+                lambda title, body, level="info": message_tool.notify(title, body, level)
+            )
+
     return agent_loop
 
 
@@ -485,6 +496,160 @@ async def api_read_file(path: str):
         return {"path": path, "content": content[:50000]}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/schedule/tasks")
+async def api_schedule_tasks():
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        return {"tasks": []}
+    return {"tasks": tool.list_tasks()}
+
+
+@app.post("/api/schedule/tasks")
+async def api_create_schedule_task(request: Request):
+    body = await request.json()
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Schedule tool not available")
+
+    task_type = body.get("type", "interval")
+    if task_type == "cron":
+        result = tool.create_cron_task(
+            name=body.get("name", "Tugas Baru"),
+            cron_expression=body.get("cron_expression", ""),
+            callback_name=body.get("callback", "default"),
+            description=body.get("description", ""),
+        )
+    elif task_type == "once":
+        import time as _time
+        delay = body.get("delay_seconds", 60)
+        result = tool.create_once_task(
+            name=body.get("name", "Tugas Sekali"),
+            run_at=_time.time() + delay,
+            callback_name=body.get("callback", "default"),
+            description=body.get("description", ""),
+        )
+    else:
+        result = tool.create_task(
+            name=body.get("name", "Tugas Baru"),
+            interval=body.get("interval", 60),
+            callback_name=body.get("callback", "default"),
+            description=body.get("description", ""),
+        )
+    return result
+
+
+@app.delete("/api/schedule/tasks/{task_id}")
+async def api_cancel_schedule_task(task_id: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Schedule tool not available")
+    return tool.cancel_task(task_id)
+
+
+@app.post("/api/schedule/tasks/{task_id}/pause")
+async def api_pause_schedule_task(task_id: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Schedule tool not available")
+    return tool.pause_task(task_id)
+
+
+@app.post("/api/schedule/tasks/{task_id}/resume")
+async def api_resume_schedule_task(task_id: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Schedule tool not available")
+    return tool.resume_task(task_id)
+
+
+@app.get("/api/schedule/stats")
+async def api_schedule_stats():
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        return {"total_tasks": 0}
+    return tool.get_stats()
+
+
+@app.get("/api/schedule/tasks/{task_id}/history")
+async def api_schedule_task_history(task_id: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("schedule_tool")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Schedule tool not available")
+    return tool.get_task_history(task_id)
+
+
+@app.get("/api/skills")
+async def api_list_skills():
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        return {"skills": []}
+    return {"skills": tool.list_skills()}
+
+
+@app.get("/api/skills/{skill_name}")
+async def api_get_skill(skill_name: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Skill manager not available")
+    result = tool.get_skill_info(skill_name)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Not found"))
+    return result
+
+
+@app.post("/api/skills")
+async def api_create_skill(request: Request):
+    body = await request.json()
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Skill manager not available")
+    return tool.create_skill(
+        name=body.get("name", ""),
+        description=body.get("description", ""),
+        capabilities=body.get("capabilities", []),
+    )
+
+
+@app.delete("/api/skills/{skill_name}")
+async def api_delete_skill(skill_name: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Skill manager not available")
+    return tool.delete_skill(skill_name)
+
+
+@app.post("/api/skills/{skill_name}/run")
+async def api_run_skill_script(skill_name: str, request: Request):
+    body = await request.json()
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        raise HTTPException(status_code=500, detail="Skill manager not available")
+    script = body.get("script", "main")
+    args = body.get("args", {})
+    return await tool.run_script(skill_name, script, args)
+
+
+@app.get("/api/skills/search/{query}")
+async def api_search_skills(query: str):
+    agent = get_agent()
+    tool = agent._tool_instances.get("skill_manager")
+    if not tool:
+        return {"results": []}
+    return {"results": tool.search_skills(query)}
 
 
 if __name__ == "__main__":

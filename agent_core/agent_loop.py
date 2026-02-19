@@ -17,14 +17,15 @@ SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang membantu pengguna meny
 
 Kamu memiliki akses ke alat-alat berikut:
 1. **shell_tool** - Menjalankan perintah shell/terminal (ls, cat, grep, python3, node, pip, npm, dll). Mendukung run_code untuk eksekusi kode langsung.
-2. **file_tool** - Operasi file: read, write, edit, append, view, list, delete, copy, move
+2. **file_tool** - Operasi file: read, write, edit, append, view, list, delete, copy, move. Juga analyze_file untuk analisis dokumen (PDF, gambar, audio, kode, data).
 3. **browser_tool** - Navigasi web dengan Playwright: navigate, screenshot, click, fill_form, type_text, extract_text, extract_links, execute_javascript, scroll, go_back, go_forward, wait_for_element
 4. **search_tool** - Pencarian web via DuckDuckGo. Juga bisa fetch halaman web: fetch_page_content
-5. **generate_tool** - Generasi media (gambar, video, audio)
+5. **generate_tool** - Generasi media (gambar, SVG, chart, audio, video, dokumen)
 6. **slides_tool** - Pembuatan presentasi
 7. **webdev_tool** - Scaffolding proyek web (React, Vue, Flask, Express, Next.js, FastAPI). Mendukung install_dependencies, add_dependency, build_project
-8. **schedule_tool** - Penjadwalan tugas
+8. **schedule_tool** - Penjadwalan & otomatisasi tugas: interval, cron, dan one-time. Operasi: create, create_cron, create_once, cancel, pause, resume, list, status, history, stats
 9. **message_tool** - Komunikasi dengan pengguna
+10. **skill_manager** - Manajemen skill modular: list, info, create, update, delete, run_script, search, reload
 
 Saat pengguna meminta sesuatu, analisis kebutuhannya dan tentukan alat yang tepat.
 Respons dalam format JSON berikut:
@@ -40,10 +41,12 @@ Jika perlu beberapa langkah:
 
 Parameter yang tersedia untuk setiap tool:
 - shell_tool: {"command": "perintah"} atau {"action": "run_code", "code": "kode", "runtime": "python3|node|bash"}
-- file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "teks lama", "new_text": "teks baru", "start_line": 1, "end_line": 10}
+- file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move|analyze", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "teks lama", "new_text": "teks baru", "start_line": 1, "end_line": 10}
 - browser_tool: {"action": "navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll|go_back|wait_for", "url": "url", "selector": "css_selector", "value": "nilai", "script": "js_code", "direction": "up|down|top|bottom", "path": "screenshot.png"}
 - search_tool: {"query": "kata kunci"} atau {"action": "fetch", "url": "url"}
 - webdev_tool: {"action": "init|install_deps|add_dep|build", "name": "nama", "framework": "react|vue|flask|express|nextjs|fastapi", "packages": ["pkg1"], "project_dir": "dir"}
+- schedule_tool: {"action": "create|create_cron|create_once|cancel|pause|resume|list|status|history|stats", "name": "nama", "interval": 60, "cron_expression": "*/5 * * * *", "delay_seconds": 300, "callback": "default", "task_id": "sched_1"}
+- skill_manager: {"action": "list|info|create|update|delete|run_script|search|reload", "name": "nama_skill", "description": "deskripsi", "capabilities": ["cap1"], "script": "nama_script", "args": {}, "query": "kata kunci"}
 - message_tool: {"content": "pesan", "type": "info|warning|success|error"}
 """
 
@@ -226,10 +229,10 @@ class AgentLoop:
                 result = f"Presentasi '{title}' dibuat."
 
             elif tool_name == "schedule_tool":
-                name = params.get("name", "tugas")
-                interval = params.get("interval", 60)
-                sched_result = tool.create_task(name, interval, "default")
-                result = str(sched_result)
+                result = await tool.execute(params)
+
+            elif tool_name == "skill_manager":
+                result = await tool.execute(params)
 
             else:
                 result = f"Tool '{tool_name}' belum diimplementasikan."
