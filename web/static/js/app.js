@@ -202,30 +202,59 @@ async function sendMessage() {
     const message = input.value.trim();
     if (!message || isLoading) return;
 
-    if (!currentSessionId) {
-        await createNewSession();
-    }
-
-    const welcomeEl = document.getElementById('welcomeScreen');
-    if (welcomeEl) welcomeEl.remove();
-
-    appendMessage('user', message);
-    input.value = '';
-    input.style.height = 'auto';
-    scrollToBottom();
-
     isLoading = true;
     document.getElementById('sendBtn').disabled = true;
-    updateStatusBar('Thinking...');
-    stepTracker = createStepTracker();
-    showThinking();
 
     try {
-        await sendStreamingMessage(message);
+        if (!currentSessionId) {
+            await createNewSession();
+        }
+
+        const welcomeEl = document.getElementById('welcomeScreen');
+        if (welcomeEl) welcomeEl.remove();
+
+        appendMessage('user', message);
+        input.value = '';
+        input.style.height = 'auto';
+        input.blur();
+        scrollToBottom();
+
+        updateStatusBar('Thinking...');
+        stepTracker = createStepTracker();
+        showThinking();
+
+        const streamTimeout = setTimeout(() => {
+            if (isLoading && streamAbortController) {
+                streamAbortController.abort();
+                removeThinking();
+                removeStreamingBubble();
+                finalizeStepTracker();
+                appendMessage('assistant', 'Request timeout - server took too long to respond. Please try again.');
+                isLoading = false;
+                document.getElementById('sendBtn').disabled = false;
+                updateStatusBar('Agent Ready');
+            }
+        }, 180000);
+
+        try {
+            await sendStreamingMessage(message);
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                console.log('Stream aborted');
+            } else {
+                removeThinking();
+                removeStreamingBubble();
+                finalizeStepTracker();
+                appendMessage('assistant', `Error: ${err.message}`);
+            }
+        } finally {
+            clearTimeout(streamTimeout);
+        }
     } catch (err) {
         removeThinking();
         removeStreamingBubble();
-        appendMessage('assistant', `Error: ${err.message}`);
+        finalizeStepTracker();
+        appendMessage('assistant', `Failed to send message: ${err.message}`);
     }
 
     isLoading = false;
@@ -233,6 +262,7 @@ async function sendMessage() {
     updateStatusBar('Agent Ready');
     activeToolCards = {};
     scrollToBottom();
+    input.focus();
 }
 
 async function sendStreamingMessage(message) {
@@ -240,122 +270,150 @@ async function sendStreamingMessage(message) {
     const payload = { message };
     if (currentModel) payload.model = currentModel;
 
-    const response = await fetch(`${API}/api/sessions/${currentSessionId}/chat/stream`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: streamAbortController.signal,
-    });
+    let response;
+    try {
+        response = await fetch(`${API}/api/sessions/${currentSessionId}/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: streamAbortController.signal,
+        });
+    } catch (fetchErr) {
+        if (fetchErr.name === 'AbortError') throw fetchErr;
+        throw new Error('Cannot connect to server. Please check your connection.');
+    }
 
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+        let errorDetail = '';
+        try { errorDetail = await response.text(); } catch {}
+        throw new Error(`Server error (${response.status}): ${errorDetail || 'Unknown error'}`);
+    }
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
     let streamBubbleCreated = false;
     let streamContent = '';
+    let receivedDone = false;
 
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+    try {
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
 
-        for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (!trimmed || !trimmed.startsWith('data: ')) continue;
 
-            let event;
-            try { event = JSON.parse(trimmed.slice(6)); } catch { continue; }
+                let event;
+                try { event = JSON.parse(trimmed.slice(6)); } catch { continue; }
 
-            switch (event.type) {
-                case 'status':
-                    removeThinking();
-                    updateStatusBar(event.content);
-                    addStep(event.content, 'running');
-                    showThinkingWithText(event.content);
-                    break;
+                switch (event.type) {
+                    case 'status':
+                        removeThinking();
+                        updateStatusBar(event.content);
+                        addStep(event.content, 'running');
+                        showThinkingWithText(event.content);
+                        break;
 
-                case 'tool_start':
-                    removeThinking();
-                    updateStatusBar(`Menjalankan ${getToolLabel(event.tool)}...`);
-                    addStep(`Menggunakan ${getToolLabel(event.tool)}`, 'running');
-                    showLiveToolCard(event.tool, event.params);
-                    break;
+                    case 'tool_start':
+                        removeThinking();
+                        updateStatusBar(`Menjalankan ${getToolLabel(event.tool)}...`);
+                        addStep(`Menggunakan ${getToolLabel(event.tool)}`, 'running');
+                        showLiveToolCard(event.tool, event.params);
+                        break;
 
-                case 'tool_result':
-                    completeLiveToolCard(event.tool, event.result, event.duration_ms, event.status);
-                    markLastStepCompleted();
-                    showThinking();
-                    break;
+                    case 'tool_result':
+                        completeLiveToolCard(event.tool, event.result, event.duration_ms, event.status);
+                        markLastStepCompleted();
+                        showThinking();
+                        break;
 
-                case 'chunk':
-                    removeThinking();
-                    if (!streamBubbleCreated) {
-                        createStreamingBubble();
-                        streamBubbleCreated = true;
-                    }
-                    streamContent += event.content;
-                    updateStreamingBubble(streamContent);
-                    scrollToBottom();
-                    break;
+                    case 'chunk':
+                        removeThinking();
+                        if (!streamBubbleCreated) {
+                            createStreamingBubble();
+                            streamBubbleCreated = true;
+                        }
+                        streamContent += event.content;
+                        updateStreamingBubble(streamContent);
+                        scrollToBottom();
+                        break;
 
-                case 'done':
-                    removeThinking();
-                    finalizeStepTracker();
-                    if (streamBubbleCreated) {
-                        finalizeStreamingBubble(streamContent);
-                    } else if (event.content) {
-                        appendMessage('assistant', event.content);
-                    }
-                    await loadSessions();
-                    break;
+                    case 'done':
+                        receivedDone = true;
+                        removeThinking();
+                        finalizeStepTracker();
+                        if (streamBubbleCreated) {
+                            finalizeStreamingBubble(streamContent);
+                        } else if (event.content) {
+                            appendMessage('assistant', event.content);
+                        }
+                        await loadSessions();
+                        break;
 
-                case 'planning':
-                    removeThinking();
-                    updateStatusBar(event.content || 'Creating plan...');
-                    addStep('Planning: ' + (event.content || 'Analyzing request...'), 'running');
-                    showThinkingWithText(event.content || 'Creating plan...');
-                    break;
+                    case 'planning':
+                        removeThinking();
+                        updateStatusBar(event.content || 'Creating plan...');
+                        addStep('Planning: ' + (event.content || 'Analyzing request...'), 'running');
+                        showThinkingWithText(event.content || 'Creating plan...');
+                        break;
 
-                case 'plan':
-                    removeThinking();
-                    markLastStepCompleted();
-                    showPlanCard(event.goal, event.steps);
-                    addStep('Plan created: ' + (event.goal || ''), 'completed');
-                    break;
+                    case 'plan':
+                        removeThinking();
+                        markLastStepCompleted();
+                        showPlanCard(event.goal, event.steps);
+                        addStep('Plan created: ' + (event.goal || ''), 'completed');
+                        break;
 
-                case 'thinking':
-                    removeThinking();
-                    updateStatusBar('Reasoning...');
-                    addStep('Thinking: ' + (event.content || '').substring(0, 80) + '...', 'running');
-                    showThinkingWithText(event.content || 'Analyzing...');
-                    break;
+                    case 'thinking':
+                        removeThinking();
+                        updateStatusBar('Reasoning...');
+                        addStep('Thinking: ' + (event.content || '').substring(0, 80) + '...', 'running');
+                        showThinkingWithText(event.content || 'Analyzing...');
+                        break;
 
-                case 'reflection':
-                    removeThinking();
-                    markLastStepCompleted();
-                    addStep('Reflection: ' + (event.content || '').substring(0, 80), 'completed');
-                    showThinkingWithText('Reflecting on results...');
-                    break;
+                    case 'reflection':
+                        removeThinking();
+                        markLastStepCompleted();
+                        addStep('Reflection: ' + (event.content || '').substring(0, 80), 'completed');
+                        showThinkingWithText('Reflecting on results...');
+                        break;
 
-                case 'phase':
-                    removeThinking();
-                    updateStatusBar(event.content || event.phase);
-                    addStep(event.content || `Phase: ${event.phase}`, 'running');
-                    showThinkingWithText(event.content || event.phase);
-                    break;
+                    case 'phase':
+                        removeThinking();
+                        updateStatusBar(event.content || event.phase);
+                        addStep(event.content || `Phase: ${event.phase}`, 'running');
+                        showThinkingWithText(event.content || event.phase);
+                        break;
 
-                case 'error':
-                    removeThinking();
-                    removeStreamingBubble();
-                    finalizeStepTracker();
-                    appendMessage('assistant', `Error: ${event.content}`);
-                    break;
+                    case 'error':
+                        receivedDone = true;
+                        removeThinking();
+                        removeStreamingBubble();
+                        finalizeStepTracker();
+                        appendMessage('assistant', `Error: ${event.content}`);
+                        break;
+                }
             }
         }
+    } finally {
+        try { reader.releaseLock(); } catch {}
+    }
+
+    if (!receivedDone) {
+        removeThinking();
+        finalizeStepTracker();
+        if (streamBubbleCreated && streamContent) {
+            finalizeStreamingBubble(streamContent);
+        } else if (!streamBubbleCreated) {
+            appendMessage('assistant', 'Response ended unexpectedly. Please try again.');
+        }
+        await loadSessions();
     }
 }
 
@@ -1295,8 +1353,17 @@ function handleKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         sendMessage();
+        return;
     }
     autoResize(e.target);
+}
+
+function handleInput(e) {
+    autoResize(e.target);
+    const sendBtn = document.getElementById('sendBtn');
+    if (sendBtn) {
+        sendBtn.style.opacity = e.target.value.trim() ? '1' : '0.5';
+    }
 }
 
 function autoResize(textarea) {

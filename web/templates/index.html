@@ -95,7 +95,7 @@
 
                     <div class="input-area">
                         <div class="input-wrapper">
-                            <textarea id="messageInput" placeholder="Tetapkan tugas atau tanyakan apa saja" rows="1" onkeydown="handleKeyDown(event)"></textarea>
+                            <textarea id="messageInput" placeholder="Tetapkan tugas atau tanyakan apa saja" rows="1" onkeydown="handleKeyDown(event)" oninput="handleInput(event)" enterkeyhint="send"></textarea>
                             <button class="btn-send" id="sendBtn" onclick="sendMessage()">
                                 <i class="ri-arrow-up-line"></i>
                             </button>
