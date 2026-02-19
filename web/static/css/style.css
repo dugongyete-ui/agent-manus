@@ -1198,6 +1198,11 @@ html, body {
     .welcome-tool-card { padding: 8px 12px; font-size: 12px; }
 }
 
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 @media (max-width: 400px) {
     .welcome-screen h2 { font-size: 20px; }
     .input-wrapper { padding: 4px 4px 4px 14px; }
