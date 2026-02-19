@@ -8,6 +8,7 @@ The codebase is primarily in Indonesian (variable names, comments, log messages)
 
 ## Recent Changes
 
+- **2026-02-19**: Wave 3 completed - Full web UI with dark theme (purple accent), FastAPI backend with all endpoints, PostgreSQL conversation memory (sessions/messages/tool_executions), sidebar chat list, main chat panel, right panel with Activity/Files/Tools tabs, code viewer modal.
 - **2026-02-19**: Wave 2 completed - browser_tool.py now uses real Playwright/Chromium, search_tool.py uses DuckDuckGo scraping, shell_tool.py enhanced with security blocklists and run_code(), webdev_tool.py expanded with 6 frameworks and dependency management. All tools integrated into agent_loop.py.
 - **2026-02-19**: Wave 1 verified - all core modules (agent_loop, context_manager, knowledge_base, llm_client, planner, tool_selector, user_manager) tested and working. 9 tools and sandbox env all importable and functional.
 
@@ -58,6 +59,15 @@ Preferred communication style: Simple, everyday language.
 +-- data/                         # Persistent data
 |   +-- knowledge_base.db         # Agent knowledge base (SQLite)
 |   +-- user_profiles.json        # User profiles and preferences
++-- web/                          # Web UI & API server
+|   +-- __init__.py
+|   +-- server.py                 # FastAPI server (port 5000)
+|   +-- database.py               # PostgreSQL database layer
+|   +-- templates/
+|   |   +-- index.html            # Main HTML template
+|   +-- static/
+|       +-- css/style.css         # Dark theme styles
+|       +-- js/app.js             # Frontend JavaScript
 +-- pyproject.toml                # Python dependencies
 ```
 

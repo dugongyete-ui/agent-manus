@@ -83,6 +83,11 @@ async def startup():
     logger.info("Manus Agent Web Server started")
 
 
+@app.get("/api/health")
+async def api_health():
+    return {"status": "healthy", "agent_state": agent_loop.state if agent_loop else "not_initialized"}
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     html_path = os.path.join(web_dir, "templates", "index.html")
