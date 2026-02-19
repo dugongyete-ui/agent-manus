@@ -2,15 +2,15 @@
   "policies": {
     "search_tool": {
       "tool_name": "search_tool",
-      "total_reward": 4.8,
-      "usage_count": 4,
-      "success_count": 4,
+      "total_reward": 6.0,
+      "usage_count": 5,
+      "success_count": 5,
       "fail_count": 0,
       "avg_reward": 1.2,
-      "confidence": 0.08,
+      "confidence": 0.1,
       "success_rate": 1.0,
       "context_rewards": {
-        "execution": 0.9119
+        "execution": 0.9983
       }
     },
     "shell_tool": {
@@ -132,7 +132,7 @@
     }
   },
   "metadata": {
-    "last_updated": 1771512691.5919168,
+    "last_updated": 1771514609.6874592,
     "learning_rate": 0.1,
     "exploration_rate": 0.15
   }
