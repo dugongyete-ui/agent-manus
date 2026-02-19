@@ -50,6 +50,9 @@ from agent_core.meta_learner import MetaLearner
 from agent_core.security_manager import SecurityManager
 from agent_core.access_control import AccessControl
 from agent_core.data_privacy import DataPrivacyManager
+from mcp.server import MCPServer
+from mcp.registry import create_default_registry
+from mcp.protocol import MCPProviderConfig, MCPProviderType
 from tools.shell_tool import ShellTool
 from tools.file_tool import FileTool
 from tools.search_tool import SearchTool
@@ -84,6 +87,7 @@ meta_learner = MetaLearner()
 security_manager = SecurityManager()
 access_control = AccessControl()
 data_privacy = DataPrivacyManager()
+mcp_server = MCPServer()
 
 agent_loop = None
 def get_agent():
@@ -914,6 +918,177 @@ async def api_privacy_detect_pii(request: Request):
     except Exception as e:
         logger.error(f"Error detecting PII: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/status")
+async def api_mcp_status():
+    try:
+        agent = get_agent()
+        return {
+            "mcp_enabled": agent.llm.mcp_enabled,
+            "current_model": agent.llm.get_current_model(),
+            "stats": agent.llm.get_mcp_stats(),
+        }
+    except Exception as e:
+        logger.error(f"Error getting MCP status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/providers")
+async def api_mcp_providers():
+    try:
+        return mcp_server.handle_list_providers()
+    except Exception as e:
+        logger.error(f"Error listing MCP providers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/models")
+async def api_mcp_models():
+    try:
+        return mcp_server.handle_list_models()
+    except Exception as e:
+        logger.error(f"Error listing MCP models: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/providers/register")
+async def api_mcp_register_provider(request: Request):
+    try:
+        body = await request.json()
+        result = await mcp_server.handle_register_provider(body)
+        return result
+    except Exception as e:
+        logger.error(f"Error registering MCP provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/mcp/providers/{name}")
+async def api_mcp_unregister_provider(name: str):
+    try:
+        return mcp_server.handle_unregister_provider(name)
+    except Exception as e:
+        logger.error(f"Error unregistering MCP provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/providers/{name}/toggle")
+async def api_mcp_toggle_provider(name: str, request: Request):
+    try:
+        body = await request.json()
+        enabled = body.get("enabled", True)
+        return mcp_server.handle_toggle_provider(name, enabled)
+    except Exception as e:
+        logger.error(f"Error toggling MCP provider: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/providers/{name}/api-key")
+async def api_mcp_set_api_key(name: str, request: Request):
+    try:
+        body = await request.json()
+        api_key = body.get("api_key", "")
+        return mcp_server.handle_set_api_key(name, api_key)
+    except Exception as e:
+        logger.error(f"Error setting MCP API key: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/switch")
+async def api_mcp_switch_model(request: Request):
+    try:
+        body = await request.json()
+        model = body.get("model", "")
+        provider = body.get("provider", "")
+        result = mcp_server.handle_switch_model(model, provider)
+        agent = get_agent()
+        if result.get("ok"):
+            agent.llm.set_model(model)
+        return result
+    except Exception as e:
+        logger.error(f"Error switching MCP model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/toggle")
+async def api_mcp_toggle(request: Request):
+    try:
+        body = await request.json()
+        enabled = body.get("enabled", True)
+        agent = get_agent()
+        agent.llm.enable_mcp(enabled)
+        return {"ok": True, "mcp_enabled": agent.llm.mcp_enabled}
+    except Exception as e:
+        logger.error(f"Error toggling MCP: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/health")
+async def api_mcp_health():
+    try:
+        return await mcp_server.handle_health()
+    except Exception as e:
+        logger.error(f"Error getting MCP health: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/stats")
+async def api_mcp_stats():
+    try:
+        return mcp_server.handle_stats()
+    except Exception as e:
+        logger.error(f"Error getting MCP stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/mcp/log")
+async def api_mcp_request_log(limit: int = 20):
+    try:
+        return mcp_server.handle_request_log(limit)
+    except Exception as e:
+        logger.error(f"Error getting MCP request log: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/complete")
+async def api_mcp_complete(request: Request):
+    try:
+        body = await request.json()
+        result = await mcp_server.handle_complete(body)
+        return result
+    except Exception as e:
+        logger.error(f"Error MCP complete: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/chat")
+async def api_mcp_chat(request: Request):
+    try:
+        body = await request.json()
+        result = await mcp_server.handle_chat(body)
+        return result
+    except Exception as e:
+        logger.error(f"Error MCP chat: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/mcp/stream")
+async def api_mcp_stream(request: Request):
+    body = await request.json()
+
+    async def generate():
+        try:
+            async for chunk_data in mcp_server.handle_stream(body):
+                yield f"data: {json.dumps(chunk_data)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":

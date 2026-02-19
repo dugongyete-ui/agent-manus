@@ -1,4 +1,4 @@
-"""LLM Client - Menghubungkan agen ke API AI dengan multi-model support, retry logic, dan validasi data."""
+"""LLM Client - Menghubungkan agen ke API AI dengan multi-model support, retry logic, validasi data, dan MCP integration."""
 
 import asyncio
 import json
@@ -9,6 +9,10 @@ import random
 from typing import Optional, AsyncIterator
 
 import aiohttp
+
+from mcp.client import MCPClient
+from mcp.registry import create_default_registry
+from mcp.protocol import MCPProviderConfig, MCPProviderType
 
 logger = logging.getLogger(__name__)
 
@@ -213,6 +217,57 @@ class LLMClient:
             "last_error": None,
             "model_errors": {},
         }
+        self._mcp_client: Optional[MCPClient] = None
+        self._mcp_enabled = False
+        self._init_mcp()
+
+    def _init_mcp(self):
+        try:
+            registry = create_default_registry()
+            self._mcp_client = MCPClient(registry)
+            self._mcp_client.set_model(self.model)
+            self._mcp_enabled = True
+            logger.info(f"MCP Client diinisialisasi dengan model: {self.model}")
+        except Exception as e:
+            logger.warning(f"MCP Client gagal diinisialisasi, menggunakan direct mode: {e}")
+            self._mcp_enabled = False
+
+    @property
+    def mcp_client(self) -> Optional[MCPClient]:
+        return self._mcp_client
+
+    @property
+    def mcp_enabled(self) -> bool:
+        return self._mcp_enabled and self._mcp_client is not None
+
+    def enable_mcp(self, enabled: bool = True):
+        self._mcp_enabled = enabled
+        logger.info(f"MCP mode {'diaktifkan' if enabled else 'dinonaktifkan'}")
+
+    def get_mcp_stats(self) -> dict:
+        if self._mcp_client:
+            return self._mcp_client.get_stats()
+        return {}
+
+    async def mcp_health_check(self) -> dict:
+        if self._mcp_client:
+            return await self._mcp_client.health_check()
+        return {"status": "mcp_not_initialized"}
+
+    def register_mcp_provider(self, config: MCPProviderConfig) -> bool:
+        if self._mcp_client:
+            return self._mcp_client.register_provider(config)
+        return False
+
+    def list_mcp_providers(self) -> list[dict]:
+        if self._mcp_client:
+            return self._mcp_client.list_providers()
+        return []
+
+    def list_mcp_models(self) -> list[dict]:
+        if self._mcp_client:
+            return self._mcp_client.list_models()
+        return []
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -225,20 +280,33 @@ class LLMClient:
         if model in AVAILABLE_MODELS:
             self.model = model
             self.provider = AVAILABLE_MODELS[model]["provider"]
+            if self._mcp_client:
+                self._mcp_client.set_model(model)
             logger.info(f"Model diubah ke: {model} (provider: {self.provider})")
             return True
+        if self._mcp_client:
+            mcp_models = [m["model"] for m in self._mcp_client.list_models()]
+            if model in mcp_models:
+                self._mcp_client.set_model(model)
+                self.model = model
+                logger.info(f"Model diubah via MCP: {model}")
+                return True
         logger.warning(f"Model tidak dikenal: {model}")
         return False
 
     def get_current_model(self) -> dict:
         model_info = AVAILABLE_MODELS.get(self.model, {})
-        return {
+        result = {
             "model": self.model,
             "provider": self.provider,
             "name": model_info.get("name", self.model),
             "category": model_info.get("category", "unknown"),
             "description": model_info.get("description", ""),
+            "mcp_enabled": self.mcp_enabled,
         }
+        if self._mcp_client:
+            result["mcp_provider"] = self._mcp_client.get_current_model().get("provider", "")
+        return result
 
     @staticmethod
     def list_models(category: Optional[str] = None) -> list[dict]:
@@ -431,6 +499,8 @@ class LLMClient:
         if self._session and not self._session.closed:
             await self._session.close()
             self._session = None
+        if self._mcp_client:
+            await self._mcp_client.close()
 
     def __del__(self):
         if self._session and not self._session.closed:
