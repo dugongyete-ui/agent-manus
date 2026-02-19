@@ -405,6 +405,7 @@ async def api_chat_stream(session_id: str, request: Request):
         raw_response = ""
         current_goal = user_message
         current_plan_steps = []
+        done_sent = False
 
         try:
             agent.context_manager.clear()
@@ -436,24 +437,7 @@ async def api_chat_stream(session_id: str, request: Request):
                     params = action.get("params", {})
                     start_time = time.time()
                     yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
-                    result = await agent._execute_tool(tool_name, params)
-                    duration_ms = int((time.time() - start_time) * 1000)
-                    tool_exec = {
-                        "tool": tool_name, "params": params,
-                        "result": result[:2000], "duration_ms": duration_ms, "status": "success"
-                    }
-                    tool_executions.append(tool_exec)
-                    log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
-                    yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
-                    agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
-                    agent.context_manager.add_message("system", f"[Hasil {tool_name}]:\n{result}")
-
-                elif action["type"] == "multi_step":
-                    for step in action.get("steps", []):
-                        tool_name = step.get("tool", "")
-                        params = step.get("params", {})
-                        start_time = time.time()
-                        yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+                    try:
                         result = await agent._execute_tool(tool_name, params)
                         duration_ms = int((time.time() - start_time) * 1000)
                         tool_exec = {
@@ -463,6 +447,46 @@ async def api_chat_stream(session_id: str, request: Request):
                         tool_executions.append(tool_exec)
                         log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
                         yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                        agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
+                        agent.context_manager.add_message("system", f"[Hasil {tool_name}]:\n{result}")
+                    except Exception as tool_err:
+                        duration_ms = int((time.time() - start_time) * 1000)
+                        error_result = f"Error executing {tool_name}: {str(tool_err)}"
+                        tool_exec = {
+                            "tool": tool_name, "params": params,
+                            "result": error_result, "duration_ms": duration_ms, "status": "error"
+                        }
+                        tool_executions.append(tool_exec)
+                        log_tool_execution(session_id, tool_name, params, error_result, "error", duration_ms)
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': error_result, 'duration_ms': duration_ms, 'status': 'error'})}\n\n"
+                        agent.context_manager.add_message("system", f"[Error {tool_name}]: {error_result}")
+
+                elif action["type"] == "multi_step":
+                    for step in action.get("steps", []):
+                        tool_name = step.get("tool", "")
+                        params = step.get("params", {})
+                        start_time = time.time()
+                        yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+                        try:
+                            result = await agent._execute_tool(tool_name, params)
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            tool_exec = {
+                                "tool": tool_name, "params": params,
+                                "result": result[:2000], "duration_ms": duration_ms, "status": "success"
+                            }
+                            tool_executions.append(tool_exec)
+                            log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                        except Exception as tool_err:
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            error_result = f"Error executing {tool_name}: {str(tool_err)}"
+                            tool_exec = {
+                                "tool": tool_name, "params": params,
+                                "result": error_result, "duration_ms": duration_ms, "status": "error"
+                            }
+                            tool_executions.append(tool_exec)
+                            log_tool_execution(session_id, tool_name, params, error_result, "error", duration_ms)
+                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': error_result, 'duration_ms': duration_ms, 'status': 'error'})}\n\n"
                     all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions]
                     agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
                     agent.context_manager.add_message("system", "\n".join(all_results))
@@ -542,55 +566,7 @@ async def api_chat_stream(session_id: str, request: Request):
 
                         yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
 
-                        result = await agent._execute_tool(tool_name, params)
-                        duration_ms = int((time.time() - start_time) * 1000)
-
-                        tool_exec = {
-                            "tool": tool_name,
-                            "params": params,
-                            "result": result[:2000],
-                            "duration_ms": duration_ms,
-                            "status": "success"
-                        }
-                        tool_executions.append(tool_exec)
-                        log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
-
-                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
-
-                        observation = f"[Hasil {tool_name}]:\n{result}"
-                        agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
-                        agent.context_manager.add_message("system", observation)
-
-                        yield f"data: {json.dumps({'type': 'phase', 'phase': 'reflecting', 'content': 'Analyzing results...'})}\n\n"
-
-                        completed_step = f"Used {tool_name} with params {json.dumps(params)}"
-                        remaining = current_plan_steps[iteration + 1:] if current_plan_steps else []
                         try:
-                            reflection = await agent._reflect_on_result(current_goal, completed_step, result, remaining)
-                            if reflection.get("type") == "think":
-                                thought = reflection.get("thought", "")
-                                yield f"data: {json.dumps({'type': 'thinking', 'content': thought})}\n\n"
-                                agent.context_manager.add_message("assistant", f"Reflection: {thought}")
-                            elif reflection.get("type") == "respond":
-                                final_response = reflection.get("message", "")
-                                for char_idx in range(0, len(final_response), 3):
-                                    text_chunk = final_response[char_idx:char_idx+3]
-                                    yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
-                                    await asyncio.sleep(0.01)
-                                break
-                            elif reflection.get("type") == "use_tool":
-                                agent.context_manager.add_message("system", f"[Reflection]: Next action determined - use {reflection.get('tool', 'unknown')}")
-                        except Exception as ref_err:
-                            logger.warning(f"Reflection failed: {ref_err}")
-
-                    elif action["type"] == "multi_step":
-                        for step in action.get("steps", []):
-                            tool_name = step.get("tool", "")
-                            params = step.get("params", {})
-                            start_time = time.time()
-
-                            yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
-
                             result = await agent._execute_tool(tool_name, params)
                             duration_ms = int((time.time() - start_time) * 1000)
 
@@ -605,6 +581,83 @@ async def api_chat_stream(session_id: str, request: Request):
                             log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
 
                             yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+
+                            observation = f"[Hasil {tool_name}]:\n{result}"
+                            agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
+                            agent.context_manager.add_message("system", observation)
+
+                            yield f"data: {json.dumps({'type': 'phase', 'phase': 'reflecting', 'content': 'Analyzing results...'})}\n\n"
+
+                            completed_step = f"Used {tool_name} with params {json.dumps(params)}"
+                            remaining = current_plan_steps[iteration + 1:] if current_plan_steps else []
+                            try:
+                                reflection = await agent._reflect_on_result(current_goal, completed_step, result, remaining)
+                                if reflection.get("type") == "think":
+                                    thought = reflection.get("thought", "")
+                                    yield f"data: {json.dumps({'type': 'thinking', 'content': thought})}\n\n"
+                                    agent.context_manager.add_message("assistant", f"Reflection: {thought}")
+                                elif reflection.get("type") == "respond":
+                                    final_response = reflection.get("message", "")
+                                    for char_idx in range(0, len(final_response), 3):
+                                        text_chunk = final_response[char_idx:char_idx+3]
+                                        yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
+                                        await asyncio.sleep(0.01)
+                                    break
+                                elif reflection.get("type") == "use_tool":
+                                    agent.context_manager.add_message("system", f"[Reflection]: Next action determined - use {reflection.get('tool', 'unknown')}")
+                            except Exception as ref_err:
+                                logger.warning(f"Reflection failed: {ref_err}")
+                        except Exception as tool_err:
+                            duration_ms = int((time.time() - start_time) * 1000)
+                            error_result = f"Error executing {tool_name}: {str(tool_err)}"
+                            tool_exec = {
+                                "tool": tool_name,
+                                "params": params,
+                                "result": error_result,
+                                "duration_ms": duration_ms,
+                                "status": "error"
+                            }
+                            tool_executions.append(tool_exec)
+                            log_tool_execution(session_id, tool_name, params, error_result, "error", duration_ms)
+                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': error_result, 'duration_ms': duration_ms, 'status': 'error'})}\n\n"
+                            agent.context_manager.add_message("system", f"[Error {tool_name}]: {error_result}")
+
+                    elif action["type"] == "multi_step":
+                        for step in action.get("steps", []):
+                            tool_name = step.get("tool", "")
+                            params = step.get("params", {})
+                            start_time = time.time()
+
+                            yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+
+                            try:
+                                result = await agent._execute_tool(tool_name, params)
+                                duration_ms = int((time.time() - start_time) * 1000)
+
+                                tool_exec = {
+                                    "tool": tool_name,
+                                    "params": params,
+                                    "result": result[:2000],
+                                    "duration_ms": duration_ms,
+                                    "status": "success"
+                                }
+                                tool_executions.append(tool_exec)
+                                log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+
+                                yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                            except Exception as tool_err:
+                                duration_ms = int((time.time() - start_time) * 1000)
+                                error_result = f"Error executing {tool_name}: {str(tool_err)}"
+                                tool_exec = {
+                                    "tool": tool_name,
+                                    "params": params,
+                                    "result": error_result,
+                                    "duration_ms": duration_ms,
+                                    "status": "error"
+                                }
+                                tool_executions.append(tool_exec)
+                                log_tool_execution(session_id, tool_name, params, error_result, "error", duration_ms)
+                                yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': error_result, 'duration_ms': duration_ms, 'status': 'error'})}\n\n"
 
                         all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
                         agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
@@ -640,18 +693,29 @@ async def api_chat_stream(session_id: str, request: Request):
                             params = intent_fallback.get("params", {})
                             start_time = time.time()
                             yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
-                            result = await agent._execute_tool(tool_name, params)
-                            duration_ms = int((time.time() - start_time) * 1000)
-                            tool_exec = {
-                                "tool": tool_name, "params": params,
-                                "result": result[:2000], "duration_ms": duration_ms, "status": "success"
-                            }
-                            tool_executions.append(tool_exec)
-                            log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
-                            yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
-                            final_response = f"Tool {tool_name} executed.\n\nResult:\n{result[:3000]}"
-                            for ci in range(0, len(final_response), 3):
-                                yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
+                            try:
+                                result = await agent._execute_tool(tool_name, params)
+                                duration_ms = int((time.time() - start_time) * 1000)
+                                tool_exec = {
+                                    "tool": tool_name, "params": params,
+                                    "result": result[:2000], "duration_ms": duration_ms, "status": "success"
+                                }
+                                tool_executions.append(tool_exec)
+                                log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+                                yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+                                final_response = f"Tool {tool_name} executed.\n\nResult:\n{result[:3000]}"
+                                for ci in range(0, len(final_response), 3):
+                                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
+                            except Exception as tool_err:
+                                duration_ms = int((time.time() - start_time) * 1000)
+                                error_result = f"Error executing {tool_name}: {str(tool_err)}"
+                                tool_exec = {
+                                    "tool": tool_name, "params": params,
+                                    "result": error_result, "duration_ms": duration_ms, "status": "error"
+                                }
+                                tool_executions.append(tool_exec)
+                                log_tool_execution(session_id, tool_name, params, error_result, "error", duration_ms)
+                                yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': error_result, 'duration_ms': duration_ms, 'status': 'error'})}\n\n"
 
             add_message(session_id, "assistant", final_response, {"tool_executions": tool_executions})
 
@@ -659,13 +723,26 @@ async def api_chat_stream(session_id: str, request: Request):
                 title = user_message[:50] + ("..." if len(user_message) > 50 else "")
                 update_session_title(session_id, title)
 
+            if not final_response and not raw_response:
+                final_response = "I couldn't process your request"
+                yield f"data: {json.dumps({'type': 'chunk', 'content': final_response})}\n\n"
+
             yield f"data: {json.dumps({'type': 'done', 'content': final_response, 'tool_executions': tool_executions, 'iterations': agent.iteration_count})}\n\n"
+            done_sent = True
 
         except Exception as e:
             logger.error(f"Stream error: {e}", exc_info=True)
             error_msg = f"Terjadi kesalahan: {str(e)}"
-            add_message(session_id, "assistant", error_msg)
-            yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+            if not done_sent:
+                try:
+                    add_message(session_id, "assistant", error_msg)
+                except:
+                    pass
+                yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+                done_sent = True
+        finally:
+            if not done_sent:
+                yield f"data: {json.dumps({'type': 'done', 'content': final_response or '', 'tool_executions': tool_executions, 'iterations': agent.iteration_count if agent else 0})}\n\n"
 
     return StreamingResponse(
         generate(),
