@@ -18,7 +18,7 @@ class FileTool:
     async def execute(self, plan: dict) -> str:
         intent = plan.get("intent", "")
         input_text = plan.get("analysis", {}).get("input", "")
-        return f"File tool siap. Intent: {intent}. Operasi file tersedia: read, write, list, delete, copy, move."
+        return f"File tool siap. Intent: {intent}. Operasi file tersedia: read, write, edit, append, view, list, delete, copy, move."
 
     def _validate_path(self, path: str) -> str:
         abs_path = os.path.abspath(path)
@@ -53,6 +53,36 @@ class FileTool:
             f.write(content)
         logger.info(f"Konten ditambahkan ke: {abs_path}")
         return f"Konten berhasil ditambahkan ke: {abs_path}"
+
+    def edit_file(self, path: str, old_text: str, new_text: str, encoding: str = "utf-8") -> str:
+        abs_path = self._validate_path(path)
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(f"File tidak ditemukan: {abs_path}")
+        with open(abs_path, "r", encoding=encoding) as f:
+            content = f.read()
+        if old_text not in content:
+            return f"Teks '{old_text[:50]}...' tidak ditemukan dalam file {abs_path}"
+        new_content = content.replace(old_text, new_text, 1)
+        with open(abs_path, "w", encoding=encoding) as f:
+            f.write(new_content)
+        logger.info(f"File diedit: {abs_path}")
+        return f"File berhasil diedit: {abs_path}"
+
+    def view_file(self, path: str, start_line: int = 1, end_line: Optional[int] = None, encoding: str = "utf-8") -> str:
+        abs_path = self._validate_path(path)
+        if not os.path.exists(abs_path):
+            raise FileNotFoundError(f"File tidak ditemukan: {abs_path}")
+        with open(abs_path, "r", encoding=encoding) as f:
+            lines = f.readlines()
+        total_lines = len(lines)
+        start = max(0, start_line - 1)
+        end = min(total_lines, end_line) if end_line else min(total_lines, start + 50)
+        selected = lines[start:end]
+        output_lines = []
+        for i, line in enumerate(selected, start=start + 1):
+            output_lines.append(f"{i:4d} | {line.rstrip()}")
+        header = f"--- {abs_path} (baris {start + 1}-{end} dari {total_lines}) ---"
+        return header + "\n" + "\n".join(output_lines)
 
     def delete_file(self, path: str) -> str:
         abs_path = self._validate_path(path)

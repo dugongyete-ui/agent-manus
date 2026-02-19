@@ -4,17 +4,19 @@ import asyncio
 import logging
 import os
 import sys
+import uuid
 import yaml
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.table import Table
+from rich.live import Live
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
 from agent_core.agent_loop import AgentLoop
-from agent_core.planner import TaskStatus
+from agent_core.user_manager import UserManager
 
 console = Console()
 logger = logging.getLogger("manus_agent")
@@ -27,7 +29,7 @@ def load_config(config_path: str = "config/settings.yaml") -> dict:
     except FileNotFoundError:
         console.print(f"[yellow]Konfigurasi tidak ditemukan di {config_path}, menggunakan default.[/yellow]")
         return {
-            "agent": {"name": "Manus Agent", "version": "1.0.0", "max_iterations": 50},
+            "agent": {"name": "Manus Agent", "version": "1.0.0", "max_iterations": 10},
             "context": {"max_tokens": 128000, "memory_window": 20, "summarization_threshold": 15},
         }
 
@@ -45,7 +47,6 @@ def setup_logging(config: dict):
         format=log_format,
         handlers=[
             logging.FileHandler(os.path.join(log_dir, "agent_activity.log")),
-            logging.StreamHandler(sys.stdout),
         ],
     )
 
@@ -59,23 +60,22 @@ def display_banner(config: dict):
     agent_name = config.get("agent", {}).get("name", "Manus Agent")
     version = config.get("agent", {}).get("version", "1.0.0")
 
-    banner_text = f"""
-# {agent_name} v{version}
+    banner_text = f"""# {agent_name} v{version}
 
 Agen AI otonom dengan kemampuan:
 - **Shell**: Eksekusi perintah terminal
-- **File**: Operasi sistem file
+- **File**: Baca, tulis, edit, lihat file
 - **Browser**: Navigasi dan interaksi web
 - **Search**: Pencarian informasi
-- **Generate**: Generasi media (gambar, video, audio)
+- **Generate**: Generasi media
 - **Slides**: Pembuatan presentasi
 - **WebDev**: Pengembangan web/mobile
 - **Schedule**: Penjadwalan tugas
 - **Message**: Komunikasi pengguna
 
-Ketik `help` untuk bantuan, `status` untuk status, `exit` untuk keluar.
-"""
-    console.print(Panel(Markdown(banner_text), border_style="blue", title="🤖 Manus Agent"))
+Powered by Dzeck AI API
+Ketik `help` untuk bantuan, `exit` untuk keluar."""
+    console.print(Panel(Markdown(banner_text), border_style="blue", title="Manus Agent"))
 
 
 def display_help():
@@ -85,9 +85,10 @@ def display_help():
 
     commands = [
         ("help", "Tampilkan daftar perintah"),
-        ("status", "Tampilkan status agen dan rencana tugas"),
+        ("status", "Tampilkan status agen"),
         ("tools", "Tampilkan daftar alat yang tersedia"),
         ("history", "Tampilkan riwayat percakapan"),
+        ("knowledge", "Tampilkan statistik knowledge base"),
         ("clear", "Bersihkan konteks percakapan"),
         ("plan", "Tampilkan rencana tugas saat ini"),
         ("exit / quit", "Keluar dari agen"),
@@ -104,7 +105,7 @@ def display_tools(agent: AgentLoop):
     table.add_column("Status", style="green")
 
     for tool_dict in agent.tool_selector.list_tools():
-        status = "✅ Aktif" if tool_dict["enabled"] else "❌ Nonaktif"
+        status = "Aktif" if tool_dict["enabled"] else "Nonaktif"
         table.add_row(tool_dict["name"], tool_dict["description"], status)
     console.print(table)
 
@@ -115,15 +116,46 @@ def display_status(agent: AgentLoop):
     table.add_column("Nilai", style="white")
 
     table.add_row("State", agent.state)
-    table.add_row("Iterasi", str(agent.iteration_count))
+    table.add_row("Iterasi terakhir", str(agent.iteration_count))
     table.add_row("Pesan dalam konteks", str(len(agent.context_manager.messages)))
     table.add_row("Estimasi token", str(agent.context_manager.get_token_estimate()))
-    table.add_row("Tugas aktif", str(len(agent.planner.tasks)))
 
-    progress = agent.planner.get_progress()
-    table.add_row("Progres tugas", f"{progress['completed']}/{progress['total']} ({progress['percentage']:.0f}%)")
+    kb_stats = agent.knowledge_base.get_stats()
+    table.add_row("Knowledge base entries", str(kb_stats["knowledge_entries"]))
+    table.add_row("Tool usage logs", str(kb_stats["tool_usage_logs"]))
 
     console.print(table)
+
+
+def display_knowledge(agent: AgentLoop):
+    stats = agent.knowledge_base.get_stats()
+    table = Table(title="Knowledge Base", border_style="magenta")
+    table.add_column("Metrik", style="cyan")
+    table.add_column("Nilai", style="white")
+
+    table.add_row("Total entries", str(stats["knowledge_entries"]))
+    table.add_row("Kategori", ", ".join(stats["categories"]) if stats["categories"] else "-")
+    table.add_row("Ringkasan percakapan", str(stats["conversation_summaries"]))
+    table.add_row("Log penggunaan tool", str(stats["tool_usage_logs"]))
+
+    console.print(table)
+
+    tool_stats = agent.knowledge_base.get_tool_usage_stats()
+    if tool_stats:
+        tool_table = Table(title="Statistik Penggunaan Tool", border_style="cyan")
+        tool_table.add_column("Tool", style="green")
+        tool_table.add_column("Total", style="white")
+        tool_table.add_column("Sukses", style="white")
+        tool_table.add_column("Avg Duration", style="white")
+
+        for ts in tool_stats:
+            tool_table.add_row(
+                ts["tool_name"],
+                str(ts["total_calls"]),
+                str(ts["success_count"]),
+                f"{ts['avg_duration_ms']:.0f}ms",
+            )
+        console.print(tool_table)
 
 
 async def interactive_loop(agent: AgentLoop):
@@ -132,7 +164,7 @@ async def interactive_loop(agent: AgentLoop):
     while True:
         try:
             user_input = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: session.prompt("\n🤖 Manus > ")
+                None, lambda: session.prompt("\nManus > ")
             )
             user_input = user_input.strip()
 
@@ -142,7 +174,7 @@ async def interactive_loop(agent: AgentLoop):
             command = user_input.lower()
 
             if command in ("exit", "quit", "keluar"):
-                console.print("[yellow]Sampai jumpa! 👋[/yellow]")
+                console.print("[yellow]Sampai jumpa![/yellow]")
                 break
             elif command == "help":
                 display_help()
@@ -152,6 +184,9 @@ async def interactive_loop(agent: AgentLoop):
                 continue
             elif command == "tools":
                 display_tools(agent)
+                continue
+            elif command == "knowledge":
+                display_knowledge(agent)
                 continue
             elif command == "history":
                 history = agent.context_manager.export_history()
@@ -173,10 +208,10 @@ async def interactive_loop(agent: AgentLoop):
                     console.print("[dim]Belum ada rencana tugas.[/dim]")
                 continue
 
-            with console.status("[bold cyan]Memproses...[/bold cyan]"):
-                response = await agent.process_request(user_input)
-
-            console.print(Panel(response, border_style="green", title="Respons"))
+            console.print("[bold cyan]Memproses...[/bold cyan]")
+            response = await agent.process_request(user_input)
+            console.print()
+            console.print(Panel(Markdown(response), border_style="green", title="Manus"))
 
         except KeyboardInterrupt:
             console.print("\n[yellow]Tekan Ctrl+C lagi atau ketik 'exit' untuk keluar.[/yellow]")
@@ -187,7 +222,6 @@ async def interactive_loop(agent: AgentLoop):
 async def main():
     config = load_config()
     setup_logging(config)
-
     display_banner(config)
 
     agent = AgentLoop(config)
@@ -215,11 +249,19 @@ async def main():
     }
 
     for name, instance in tool_instances.items():
-        agent.register_tool_executor(name, instance.execute)
+        agent.register_tool(name, instance)
+
+    user_manager = UserManager()
+    session_user = user_manager.get_or_create_profile("default_user", "User")
 
     logger.info("Manus Agent dimulai.")
-    await interactive_loop(agent)
-    logger.info("Manus Agent dihentikan.")
+
+    try:
+        await interactive_loop(agent)
+    finally:
+        user_manager.save()
+        await agent.cleanup()
+        logger.info("Manus Agent dihentikan.")
 
 
 def run():
