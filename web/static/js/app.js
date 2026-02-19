@@ -114,15 +114,41 @@ async function selectSession(sessionId) {
     }
 
     container.innerHTML = '';
+    let hasToolCards = false;
     data.messages.forEach(msg => {
         if (msg.role === 'system') return;
-        if (msg.metadata && msg.metadata.tool_executions) {
+        if (msg.metadata && msg.metadata.tool_executions && msg.metadata.tool_executions.length > 0) {
+            hasToolCards = true;
             msg.metadata.tool_executions.forEach(te => {
                 appendCompletedToolCard(te);
             });
         }
         appendMessage(msg.role, msg.content);
     });
+
+    if (!hasToolCards) {
+        try {
+            const toolData = await api(`/api/sessions/${sessionId}/tools`);
+            if (toolData.executions && toolData.executions.length > 0) {
+                const toolSection = document.createElement('div');
+                toolSection.className = 'history-tool-section';
+                toolData.executions.forEach(te => {
+                    const card = document.createElement('div');
+                    card.className = 'message-row assistant';
+                    container.insertBefore(card, container.firstChild);
+                    appendCompletedToolCard({
+                        tool: te.tool_name,
+                        params: typeof te.params === 'string' ? JSON.parse(te.params || '{}') : (te.params || {}),
+                        result: te.result || '',
+                        duration_ms: te.duration_ms || 0,
+                        status: te.status || 'success',
+                    });
+                });
+            }
+        } catch (e) {
+        }
+    }
+
     scrollToBottom();
 }
 
@@ -725,6 +751,33 @@ function buildSkillPreview(params) {
     </div>`;
 }
 
+function buildParamsDisplay(toolName, params) {
+    if (!params || Object.keys(params).length === 0) return '';
+
+    const SENSITIVE_KEYS = ['password', 'token', 'secret', 'api_key'];
+    const entries = Object.entries(params).filter(([k]) => !SENSITIVE_KEYS.includes(k.toLowerCase()));
+    if (entries.length === 0) return '';
+
+    const rows = entries.map(([key, value]) => {
+        let displayValue = '';
+        if (typeof value === 'string') {
+            displayValue = value.length > 120 ? value.substring(0, 120) + '...' : value;
+        } else if (Array.isArray(value)) {
+            displayValue = JSON.stringify(value).substring(0, 120);
+        } else if (typeof value === 'object' && value !== null) {
+            displayValue = JSON.stringify(value).substring(0, 120);
+        } else {
+            displayValue = String(value);
+        }
+        return `<div class="param-row">
+            <span class="param-key">${escapeHtml(key)}</span>
+            <span class="param-value">${escapeHtml(displayValue)}</span>
+        </div>`;
+    });
+
+    return `<div class="params-grid">${rows.join('')}</div>`;
+}
+
 function showLiveToolCard(toolName, params) {
     removeThinking();
     const container = document.getElementById('messagesContainer');
@@ -737,6 +790,8 @@ function showLiveToolCard(toolName, params) {
 
     const subtitle = getToolSubtitle(toolName, params);
     const previewHTML = buildPreviewHTML(toolName, params);
+
+    const paramsHTML = buildParamsDisplay(toolName, params);
 
     row.innerHTML = `
         <div class="message-avatar"><i class="ri-robot-2-fill"></i></div>
@@ -754,6 +809,7 @@ function showLiveToolCard(toolName, params) {
                     <span class="live-tool-status-text">Running</span>
                 </div>
             </div>
+            ${paramsHTML ? `<div class="live-tool-params">${paramsHTML}</div>` : ''}
             <div class="live-tool-progress">
                 <div class="live-tool-progress-bar running"></div>
             </div>
@@ -801,6 +857,7 @@ function completeLiveToolCard(toolName, result, durationMs, status) {
     if (card) {
         card.classList.remove('running');
         card.classList.add('completed');
+        card.classList.add(status === 'success' ? 'success-card' : 'error-card');
     }
 
     const dot = row.querySelector('.live-tool-status-dot');
@@ -952,9 +1009,11 @@ function appendCompletedToolCard(toolExec) {
     const subtitle = getToolSubtitle(toolExec.tool, toolExec.params || {});
     const result = toolExec.result || '';
 
+    const historyParamsHTML = buildParamsDisplay(toolExec.tool, toolExec.params || {});
+
     row.innerHTML = `
         <div class="message-avatar"><i class="ri-robot-2-fill"></i></div>
-        <div class="live-tool-card completed" data-tool="${toolExec.tool}">
+        <div class="live-tool-card completed ${toolExec.status === 'success' ? 'success-card' : 'error-card'}" data-tool="${toolExec.tool}">
             <div class="live-tool-header" onclick="toggleToolPreview(this)">
                 <div class="live-tool-icon ${toolExec.tool}">
                     <i class="${config.icon}"></i>
@@ -968,6 +1027,7 @@ function appendCompletedToolCard(toolExec) {
                     <span class="live-tool-status-text">${toolExec.status === 'success' ? 'Done' : 'Error'}</span>
                 </div>
             </div>
+            ${historyParamsHTML ? `<div class="live-tool-params">${historyParamsHTML}</div>` : ''}
             <div class="live-tool-preview collapsed">
                 <div class="preview-generic">${escapeHtml(result.substring(0, 1000))}</div>
             </div>

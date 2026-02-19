@@ -1239,6 +1239,10 @@ class AgentLoop:
         logger.info("Phase 4 - SYNTHESIS: Generating final comprehensive response...")
 
         execution_summary = ""
+        tool_table_rows = []
+        files_created = []
+        urls_visited = []
+
         for entry in self.execution_log:
             phase = entry.get("phase", "unknown")
             data = entry.get("data", {})
@@ -1247,24 +1251,56 @@ class AgentLoop:
                 for i, step in enumerate(data.get('steps', []), 1):
                     execution_summary += f"  Step {i}: {step}\n"
             elif phase == "execute":
-                execution_summary += f"Executed {data.get('tool', '')}: {str(data.get('result', ''))[:300]}\n"
+                tool_name = data.get('tool', '')
+                result_preview = str(data.get('result', ''))[:300]
+                params = data.get('params', {})
+                execution_summary += f"Executed {tool_name}: {result_preview}\n"
+
+                tool_table_rows.append({
+                    "tool": tool_name,
+                    "params_summary": json.dumps(params, ensure_ascii=False)[:100] if params else "-",
+                    "result_preview": result_preview[:100],
+                })
+
+                if tool_name == "file_tool" and params.get("operation") in ("write", "create"):
+                    path = params.get("path", "")
+                    if path:
+                        files_created.append(path)
+                if tool_name == "browser_tool" and params.get("url"):
+                    urls_visited.append(params["url"])
+
             elif phase == "think":
                 execution_summary += f"Analysis: {data.get('thought', '')[:200]}\n"
 
         if self.planner.tasks:
             execution_summary += "\n" + self.planner.get_plan_summary()
 
+        structured_appendix = ""
+        if tool_table_rows:
+            structured_appendix += "\n\n---\n**Ringkasan Eksekusi Tool:**\n\n"
+            structured_appendix += "| No | Tool | Parameter | Hasil |\n"
+            structured_appendix += "|----|------|-----------|-------|\n"
+            for i, row in enumerate(tool_table_rows, 1):
+                structured_appendix += f"| {i} | {row['tool']} | {row['params_summary']} | {row['result_preview']} |\n"
+
+        if files_created:
+            structured_appendix += f"\n**File yang dibuat:** {', '.join(f'`{f}`' for f in files_created)}\n"
+        if urls_visited:
+            structured_appendix += f"\n**URL yang dikunjungi:** {', '.join(urls_visited)}\n"
+
         if user_input and execution_summary:
             prompt = SYNTHESIS_PROMPT.format(
                 user_input=user_input,
                 execution_summary=execution_summary,
             )
-            return await self.llm.chat(prompt)
+            llm_response = await self.llm.chat(prompt)
+            return llm_response + structured_appendix
 
         context = self.context_manager.get_context_window()
         prompt = self._build_llm_prompt(context)
         prompt += "\n\n[System]: Berikan ringkasan akhir dari semua yang sudah dilakukan. Respons sebagai teks biasa, bukan JSON."
-        return await self.llm.chat(prompt)
+        llm_response = await self.llm.chat(prompt)
+        return llm_response + structured_appendix
 
     def _save_to_knowledge(self, user_input: str, response: str):
         try:

@@ -937,6 +937,58 @@ html, body {
     overflow-y: auto;
 }
 
+.live-tool-params {
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(108, 92, 231, 0.03);
+}
+
+.params-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+}
+
+.param-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 10px;
+    line-height: 1.6;
+    max-width: 100%;
+}
+
+.param-key {
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.param-key::after {
+    content: ':';
+    color: var(--text-muted);
+}
+
+.param-value {
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    word-break: break-all;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 350px;
+}
+
+.live-tool-card.completed.success-card {
+    border-left: 3px solid var(--success);
+}
+
+.live-tool-card.completed.error-card {
+    border-left: 3px solid var(--error);
+}
+
 .live-tool-footer {
     display: flex;
     align-items: center;
