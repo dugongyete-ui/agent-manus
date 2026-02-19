@@ -63,7 +63,7 @@ The web interface is built with a FastAPI backend on port 5000, using Jinja2 tem
 - **Transport** (`mcp/transport.py`): stdio and HTTP/SSE transport layer support
 - **LLM Integration**: `LLMClient` now initializes MCP Client internally, syncs model switching, exposes MCP stats/health
 - **API Endpoints**: `/api/mcp/status`, `/api/mcp/providers`, `/api/mcp/models`, `/api/mcp/switch`, `/api/mcp/toggle`, `/api/mcp/health`, `/api/mcp/stats`, `/api/mcp/log`, `/api/mcp/complete`, `/api/mcp/chat`, `/api/mcp/stream`
-- **UI Panel**: MCP toggle button in top bar with status indicator, slide-out panel showing providers, stats, and request log
+- **Backend Only**: MCP berjalan di belakang layar tanpa tampilan di UI, otomatis aktif saat server start, tidak memerlukan API key (menggunakan public API endpoint)
 
 ### Key Design Patterns
 The system is built on principles of asynchronous operations (`async/await`), a strong emphasis on **safety** (command/path blocklists, timeouts, PII detection, RBAC), **self-improvement** through RLHF and meta-learning, **modular tool design**, **configuration-driven behavior**, **auto-cleanup** of resources, and an **extensible skills system**.
