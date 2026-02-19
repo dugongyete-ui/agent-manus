@@ -39,159 +39,26 @@
                 <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()">
                     <i class="ri-menu-line"></i>
                 </button>
-                <div class="session-title" id="sessionTitle">Select or create a chat</div>
-                <div class="top-actions">
-                    <button class="btn-icon" onclick="toggleActivityPanel()" title="Activity">
-                        <i class="ri-pulse-line"></i>
-                    </button>
-                    <button class="btn-icon" onclick="toggleFileExplorer()" title="Files">
-                        <i class="ri-folder-3-line"></i>
-                    </button>
-                </div>
+                <div class="session-title" id="sessionTitle">New Chat</div>
             </header>
 
             <div class="content-area">
                 <div class="chat-panel" id="chatPanel">
                     <div class="messages-container" id="messagesContainer">
                         <div class="welcome-screen" id="welcomeScreen">
-                            <div class="welcome-icon">
-                                <i class="ri-robot-2-fill"></i>
-                            </div>
-                            <h2>Manus Agent</h2>
-                            <p>AI Agent otonom dengan kemampuan tools lengkap</p>
-                            <div class="capability-grid">
-                                <div class="capability-card" onclick="quickAction('Tolong buatkan file Python hello world')">
-                                    <i class="ri-code-s-slash-line"></i>
-                                    <span>Code Execution</span>
-                                </div>
-                                <div class="capability-card" onclick="quickAction('Cari informasi terbaru tentang AI')">
-                                    <i class="ri-search-line"></i>
-                                    <span>Web Search</span>
-                                </div>
-                                <div class="capability-card" onclick="quickAction('List semua file di direktori saat ini')">
-                                    <i class="ri-folder-open-line"></i>
-                                    <span>File Operations</span>
-                                </div>
-                                <div class="capability-card" onclick="quickAction('Jalankan perintah uname -a di terminal')">
-                                    <i class="ri-terminal-box-line"></i>
-                                    <span>Shell Commands</span>
-                                </div>
-                            </div>
+                            <h2>Apa yang bisa saya bantu?</h2>
                         </div>
                     </div>
 
                     <div class="input-area">
                         <div class="input-wrapper">
-                            <textarea id="messageInput" placeholder="Ketik pesan untuk agent..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+                            <textarea id="messageInput" placeholder="Tetapkan tugas atau tanyakan apa saja" rows="1" onkeydown="handleKeyDown(event)"></textarea>
                             <button class="btn-send" id="sendBtn" onclick="sendMessage()">
-                                <i class="ri-send-plane-fill"></i>
+                                <i class="ri-arrow-up-line"></i>
                             </button>
                         </div>
-                        <div class="input-hint">Enter untuk kirim, Shift+Enter untuk baris baru</div>
                     </div>
                 </div>
-
-                <aside class="right-panel" id="rightPanel">
-                    <div class="panel-tabs">
-                        <button class="panel-tab active" data-tab="activity" onclick="switchTab('activity')">
-                            <i class="ri-pulse-line"></i> Activity
-                        </button>
-                        <button class="panel-tab" data-tab="files" onclick="switchTab('files')">
-                            <i class="ri-folder-3-line"></i> Files
-                        </button>
-                        <button class="panel-tab" data-tab="tools" onclick="switchTab('tools')">
-                            <i class="ri-tools-line"></i> Tools
-                        </button>
-                        <button class="panel-tab" data-tab="schedule" onclick="switchTab('schedule')">
-                            <i class="ri-calendar-line"></i> Schedule
-                        </button>
-                        <button class="panel-tab" data-tab="skills" onclick="switchTab('skills')">
-                            <i class="ri-lightbulb-line"></i> Skills
-                        </button>
-                        <button class="panel-tab" data-tab="learning" onclick="switchTab('learning')">
-                            <i class="ri-line-chart-line"></i> Learning
-                        </button>
-                        <button class="panel-tab" data-tab="security" onclick="switchTab('security')">
-                            <i class="ri-shield-check-line"></i> Security
-                        </button>
-                    </div>
-
-                    <div class="panel-content" id="activityTab">
-                        <div class="activity-list" id="activityList">
-                            <div class="empty-state">
-                                <i class="ri-pulse-line"></i>
-                                <p>No activity yet</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="panel-content hidden" id="filesTab">
-                        <div class="file-explorer" id="fileExplorer">
-                            <div class="file-path-bar">
-                                <button class="btn-icon btn-sm" onclick="navigateFiles('..')">
-                                    <i class="ri-arrow-up-line"></i>
-                                </button>
-                                <span id="currentPath">.</span>
-                            </div>
-                            <div class="file-list" id="fileList"></div>
-                        </div>
-                    </div>
-
-                    <div class="panel-content hidden" id="toolsTab">
-                        <div class="tools-list" id="toolsList"></div>
-                    </div>
-
-                    <div class="panel-content hidden" id="scheduleTab">
-                        <div class="schedule-header">
-                            <div class="schedule-stats" id="scheduleStats"></div>
-                        </div>
-                        <div class="schedule-list" id="scheduleList">
-                            <div class="empty-state">
-                                <i class="ri-calendar-line"></i>
-                                <p>No scheduled tasks</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="panel-content hidden" id="skillsTab">
-                        <div class="skills-list" id="skillsList">
-                            <div class="empty-state">
-                                <i class="ri-lightbulb-line"></i>
-                                <p>No skills loaded</p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="panel-content hidden" id="learningTab">
-                        <div class="learning-section">
-                            <div class="section-header"><i class="ri-bar-chart-line"></i> Feedback Stats</div>
-                            <div class="learning-stats" id="learningStats">
-                                <div class="empty-state"><i class="ri-line-chart-line"></i><p>Loading...</p></div>
-                            </div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-lightbulb-flash-line"></i> Insights</div>
-                            <div class="learning-insights" id="learningInsights"></div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-tools-line"></i> Tool Performance</div>
-                            <div class="learning-tools" id="learningToolPerf"></div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-brain-line"></i> Meta-Learning</div>
-                            <div class="meta-learning" id="metaLearning"></div>
-                        </div>
-                    </div>
-
-                    <div class="panel-content hidden" id="securityTab">
-                        <div class="security-section">
-                            <div class="section-header"><i class="ri-shield-star-line"></i> Security Audit</div>
-                            <div class="security-audit" id="securityAudit">
-                                <div class="empty-state"><i class="ri-shield-check-line"></i><p>Loading...</p></div>
-                            </div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-alarm-warning-line"></i> Recent Events</div>
-                            <div class="security-events" id="securityEvents"></div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-user-settings-line"></i> Access Control</div>
-                            <div class="rbac-stats" id="rbacStats"></div>
-                            <div class="section-header" style="margin-top:12px"><i class="ri-lock-line"></i> Privacy & Compliance</div>
-                            <div class="privacy-stats" id="privacyStats"></div>
-                        </div>
-                    </div>
-                </aside>
             </div>
         </main>
     </div>
