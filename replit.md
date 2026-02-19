@@ -8,10 +8,22 @@ Manus Agent is an autonomous AI agent framework designed in Python, operating on
 
 Preferred communication style: Simple, everyday language.
 
+## Recent Changes
+
+### Fase 12: Integrasi Eksternal Tanpa Kunci (Feb 19, 2026)
+- **Multi-Model AI Support**: Added 16 AI models accessible via public API endpoint with `?provider=Perplexity&model={model}` pattern
+  - Models: gpt5_thinking, 03, o3pro, claude40opus, claude40opusthinking, claude41opusthinking, claude45sonnet, claude45sonnetthinking, grok4, o3_research, o3pro_research, claude40sonnetthinking_research, o3pro_labs, claude40opusthinking_labs, r1
+  - Categories: thinking, reasoning, general, research, labs
+- **Retry Logic**: Exponential backoff with jitter for rate-limited public endpoints (max 5 retries, respects Retry-After headers)
+- **Data Validation**: All API responses are validated and sanitized against injection attacks (XSS, code injection patterns)
+- **Auto Parameter Generator**: Automatic intent detection from user input (search, analysis, generation, explanation, coding, etc.)
+- **Model Selector UI**: Interactive dropdown in top bar for switching between AI models, with category filtering
+- **API Endpoints**: `/api/models` (list), `/api/models/switch` (change), `/api/models/stats` (retry stats)
+
 ## System Architecture
 
 ### Agent Core
-The `agent_core` module orchestrates the agent's primary functions. The `AgentLoop` manages the iterative reasoning process, interacting with a Language Model for action planning and execution, and integrates self-improvement mechanisms like `RLHFEngine` (Reinforcement Learning from Human Feedback) and `MetaLearner` for optimizing strategies and tool usage. Security is paramount, with `SecurityManager`, `AccessControl` (Role-Based Access Control), and `DataPrivacyManager` ensuring secure operations, access management, and compliance with data privacy standards (including PII detection and GDPR). The `LLMClient` handles communication with the Dzeck AI streaming API. `ContextManager` maintains conversation history with token limits and auto-summarization, while `KnowledgeBase` provides persistent memory via SQLite for knowledge entries and tool usage logs. `Planner` facilitates hierarchical task management, and `ToolSelector` intelligently dispatches tasks to appropriate tools. `UserManager` manages user profiles and preferences.
+The `agent_core` module orchestrates the agent's primary functions. The `AgentLoop` manages the iterative reasoning process, interacting with a Language Model for action planning and execution, and integrates self-improvement mechanisms like `RLHFEngine` (Reinforcement Learning from Human Feedback) and `MetaLearner` for optimizing strategies and tool usage. Security is paramount, with `SecurityManager`, `AccessControl` (Role-Based Access Control), and `DataPrivacyManager` ensuring secure operations, access management, and compliance with data privacy standards (including PII detection and GDPR). The `LLMClient` handles communication with AI APIs supporting 16 models across 5 categories (thinking, reasoning, general, research, labs) with robust retry logic and data validation. `ContextManager` maintains conversation history with token limits and auto-summarization, while `KnowledgeBase` provides persistent memory via SQLite for knowledge entries and tool usage logs. `Planner` facilitates hierarchical task management, and `ToolSelector` intelligently dispatches tasks to appropriate tools. `UserManager` manages user profiles and preferences.
 
 ### Tools
 The `tools` directory contains various specialized tools callable by the agent:
@@ -33,7 +45,14 @@ The `skills` system allows for dynamic extensibility. Each skill is a modular di
 The `sandbox_env` provides a secure and isolated environment for operations. `RuntimeExecutor` handles code execution across various runtimes with timeouts. `PackageManager` manages package installations (pip, npm, yarn). `VMManager` controls the lifecycle of virtual machines (start, stop, snapshot, restore).
 
 ### Web UI
-The web interface is built with a FastAPI backend on port 5000, using Jinja2 templates for rendering. It features a PostgreSQL database for persistent storage of sessions, messages, and tool execution logs. The UI includes a dark theme and provides various panels for activity, files, tools, schedule management, skill overview, learning insights (feedback, tool performance), and security monitoring (audits, RBAC, privacy compliance).
+The web interface is built with a FastAPI backend on port 5000, using Jinja2 templates for rendering. It features a PostgreSQL database for persistent storage of sessions, messages, and tool execution logs. The UI includes a dark theme with model selector dropdown, and provides various panels for activity, files, tools, schedule management, skill overview, learning insights (feedback, tool performance), and security monitoring (audits, RBAC, privacy compliance).
+
+### LLM Integration (Fase 12)
+- **Multi-Model**: 16 AI models accessible without API keys via public endpoint
+- **Retry Logic**: Exponential backoff with jitter, configurable max retries, respects rate limit headers
+- **Data Validation**: Response sanitization against XSS/injection, dynamic JSON structure parsing
+- **Auto Parameters**: Intent-based query parameter generation from user input
+- **Model Management API**: REST endpoints for listing, switching, and monitoring models
 
 ### Key Design Patterns
 The system is built on principles of asynchronous operations (`async/await`), a strong emphasis on **safety** (command/path blocklists, timeouts, PII detection, RBAC), **self-improvement** through RLHF and meta-learning, **modular tool design**, **configuration-driven behavior**, **auto-cleanup** of resources, and an **extensible skills system**.

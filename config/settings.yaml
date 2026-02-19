@@ -21,6 +21,33 @@ sandbox:
     max_memory_mb: 2048
     max_cpu_percent: 80
 
+llm:
+  default_provider: "Perplexity"
+  default_model: "claude40opusthinking_labs"
+  timeout: 120
+  retry:
+    max_retries: 5
+    base_delay: 1.0
+    max_delay: 30.0
+    backoff_factor: 2.0
+    jitter: true
+  available_models:
+    - gpt5_thinking
+    - "03"
+    - o3pro
+    - claude40opus
+    - claude40opusthinking
+    - claude41opusthinking
+    - claude45sonnet
+    - claude45sonnetthinking
+    - grok4
+    - o3_research
+    - o3pro_research
+    - claude40sonnetthinking_research
+    - o3pro_labs
+    - claude40opusthinking_labs
+    - r1
+
 tools:
   browser:
     headless: true
