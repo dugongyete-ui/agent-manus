@@ -2,11 +2,32 @@ import asyncio
 import json
 import logging
 import os
+import subprocess
 import sys
 import time
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+def _ensure_deps():
+    required = {
+        "PIL": "Pillow", "PyPDF2": "PyPDF2", "mutagen": "mutagen",
+        "psycopg2": "psycopg2-binary",
+    }
+    missing = []
+    for mod, pkg in required.items():
+        try:
+            __import__(mod)
+        except ImportError:
+            missing.append(pkg)
+    if missing:
+        print(f"Auto-installing: {', '.join(missing)}")
+        subprocess.check_call(
+            [sys.executable, "-m", "pip", "install", "--quiet", "--no-warn-script-location"] + missing,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+
+_ensure_deps()
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
@@ -282,24 +303,139 @@ async def api_chat_stream(session_id: str, request: Request):
     full_prompt = f"[CONVERSATION HISTORY]\n{history_context}\n[END HISTORY]\n\nUser: {user_message}"
 
     async def generate():
-        full_response = []
-        try:
-            async for chunk in llm_client.chat_stream(full_prompt):
-                full_response.append(chunk)
-                yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+        agent = get_agent()
+        tool_executions = []
+        final_response = ""
 
-            response_text = "".join(full_response)
-            add_message(session_id, "assistant", response_text)
+        try:
+            agent.context_manager.clear()
+            agent.context_manager.set_system_prompt(SYSTEM_PROMPT)
+            agent.context_manager.add_message("user", full_prompt)
+            agent.iteration_count = 0
+            agent.execution_log.clear()
+
+            max_iterations = agent.max_iterations
+
+            for iteration in range(max_iterations):
+                agent.iteration_count = iteration + 1
+
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Menganalisis...'})}\n\n"
+
+                context = agent.context_manager.get_context_window()
+                llm_input = agent._build_llm_prompt(context)
+
+                raw_response = ""
+                raw_chunks = []
+                async for chunk in agent.llm.chat_stream(llm_input):
+                    raw_chunks.append(chunk)
+                raw_response = "".join(raw_chunks)
+
+                action = agent._parse_llm_response(raw_response)
+
+                if action["type"] == "respond":
+                    final_response = action["message"]
+                    for char_idx in range(0, len(final_response), 3):
+                        text_chunk = final_response[char_idx:char_idx+3]
+                        yield f"data: {json.dumps({'type': 'chunk', 'content': text_chunk})}\n\n"
+                        await asyncio.sleep(0.01)
+                    break
+
+                elif action["type"] == "use_tool":
+                    tool_name = action["tool"]
+                    params = action.get("params", {})
+                    start_time = time.time()
+
+                    yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+
+                    result = await agent._execute_tool(tool_name, params)
+                    duration_ms = int((time.time() - start_time) * 1000)
+
+                    tool_exec = {
+                        "tool": tool_name,
+                        "params": params,
+                        "result": result[:2000],
+                        "duration_ms": duration_ms,
+                        "status": "success"
+                    }
+                    tool_executions.append(tool_exec)
+                    log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+
+                    yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+
+                    observation = f"[Hasil {tool_name}]:\n{result}"
+                    agent.context_manager.add_message("assistant", f"Menggunakan {tool_name}...")
+                    agent.context_manager.add_message("system", observation)
+
+                elif action["type"] == "multi_step":
+                    for step in action.get("steps", []):
+                        tool_name = step.get("tool", "")
+                        params = step.get("params", {})
+                        start_time = time.time()
+
+                        yield f"data: {json.dumps({'type': 'tool_start', 'tool': tool_name, 'params': params})}\n\n"
+
+                        result = await agent._execute_tool(tool_name, params)
+                        duration_ms = int((time.time() - start_time) * 1000)
+
+                        tool_exec = {
+                            "tool": tool_name,
+                            "params": params,
+                            "result": result[:2000],
+                            "duration_ms": duration_ms,
+                            "status": "success"
+                        }
+                        tool_executions.append(tool_exec)
+                        log_tool_execution(session_id, tool_name, params, result[:2000], "success", duration_ms)
+
+                        yield f"data: {json.dumps({'type': 'tool_result', 'tool': tool_name, 'result': result[:2000], 'duration_ms': duration_ms, 'status': 'success'})}\n\n"
+
+                    all_results = [f"[{te['tool']}]: {te['result']}" for te in tool_executions[-len(action.get('steps', [])):]]
+                    agent.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                    agent.context_manager.add_message("system", "\n".join(all_results))
+
+                elif action["type"] == "error":
+                    final_response = action.get("message", raw_response)
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_response})}\n\n"
+                    break
+            else:
+                yield f"data: {json.dumps({'type': 'status', 'content': 'Menyusun jawaban akhir...'})}\n\n"
+                context = agent.context_manager.get_context_window()
+                prompt = agent._build_llm_prompt(context)
+                prompt += "\n\n[System]: Berikan ringkasan akhir. Respons sebagai teks biasa."
+
+                async for chunk in agent.llm.chat_stream(prompt):
+                    final_response += chunk
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': chunk})}\n\n"
+
+            if not final_response and raw_response:
+                final_response = raw_response
+                for ci in range(0, len(final_response), 3):
+                    yield f"data: {json.dumps({'type': 'chunk', 'content': final_response[ci:ci+3]})}\n\n"
+                    await asyncio.sleep(0.01)
+
+            add_message(session_id, "assistant", final_response, {"tool_executions": tool_executions})
 
             if len(get_messages(session_id)) <= 2:
                 title = user_message[:50] + ("..." if len(user_message) > 50 else "")
                 update_session_title(session_id, title)
 
-            yield f"data: {json.dumps({'type': 'done', 'content': response_text})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'content': final_response, 'tool_executions': tool_executions, 'iterations': agent.iteration_count})}\n\n"
 
-    return StreamingResponse(generate(), media_type="text/event-stream")
+        except Exception as e:
+            logger.error(f"Stream error: {e}", exc_info=True)
+            error_msg = f"Terjadi kesalahan: {str(e)}"
+            add_message(session_id, "assistant", error_msg)
+            yield f"data: {json.dumps({'type': 'error', 'content': error_msg})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/api/sessions/{session_id}/tools")

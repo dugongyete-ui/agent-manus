@@ -3,6 +3,7 @@ let currentSessionId = null;
 let isLoading = false;
 let rightPanelVisible = true;
 let currentFilePath = '.';
+let streamAbortController = null;
 
 async function api(path, options = {}) {
     const res = await fetch(`${API}${path}`, {
@@ -126,38 +127,216 @@ async function sendMessage() {
 
     isLoading = true;
     document.getElementById('sendBtn').disabled = true;
+    updateStatusBar('Menghubungkan...');
 
     showThinking();
 
     try {
-        const data = await api(`/api/sessions/${currentSessionId}/chat`, {
-            method: 'POST',
-            body: JSON.stringify({ message })
-        });
-
-        removeThinking();
-
-        if (data.tool_executions && data.tool_executions.length > 0) {
-            data.tool_executions.forEach(te => {
-                appendToolCard(te);
-                addActivityItem(te);
-            });
-        }
-
-        if (data.response) {
-            appendMessage('assistant', data.response);
-        }
-
-        await loadSessions();
-        loadToolExecutions(currentSessionId);
+        await sendStreamingMessage(message);
     } catch (err) {
         removeThinking();
+        removeStreamingBubble();
         appendMessage('assistant', `Error: ${err.message}`);
     }
 
     isLoading = false;
     document.getElementById('sendBtn').disabled = false;
+    updateStatusBar('Agent Ready');
     scrollToBottom();
+}
+
+async function sendStreamingMessage(message) {
+    streamAbortController = new AbortController();
+
+    const response = await fetch(`${API}/api/sessions/${currentSessionId}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message }),
+        signal: streamAbortController.signal,
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let streamBubbleCreated = false;
+    let streamContent = '';
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || !trimmed.startsWith('data: ')) continue;
+
+            const jsonStr = trimmed.slice(6);
+            let event;
+            try {
+                event = JSON.parse(jsonStr);
+            } catch { continue; }
+
+            switch (event.type) {
+                case 'status':
+                    removeThinking();
+                    updateStatusBar(event.content);
+                    showThinkingWithText(event.content);
+                    break;
+
+                case 'tool_start':
+                    removeThinking();
+                    updateStatusBar(`Menjalankan ${event.tool}...`);
+                    showToolRunning(event.tool, event.params);
+                    break;
+
+                case 'tool_result':
+                    removeToolRunning();
+                    appendToolCard({
+                        tool: event.tool,
+                        result: event.result,
+                        duration_ms: event.duration_ms,
+                        status: event.status,
+                    });
+                    addActivityItem({
+                        tool: event.tool,
+                        result: event.result,
+                        duration_ms: event.duration_ms,
+                        status: event.status,
+                    });
+                    showThinking();
+                    break;
+
+                case 'chunk':
+                    removeThinking();
+                    if (!streamBubbleCreated) {
+                        createStreamingBubble();
+                        streamBubbleCreated = true;
+                    }
+                    streamContent += event.content;
+                    updateStreamingBubble(streamContent);
+                    scrollToBottom();
+                    break;
+
+                case 'done':
+                    removeThinking();
+                    if (streamBubbleCreated) {
+                        finalizeStreamingBubble(streamContent);
+                    } else if (event.content) {
+                        appendMessage('assistant', event.content);
+                    }
+                    await loadSessions();
+                    loadToolExecutions(currentSessionId);
+                    break;
+
+                case 'error':
+                    removeThinking();
+                    removeStreamingBubble();
+                    appendMessage('assistant', `Error: ${event.content}`);
+                    break;
+            }
+        }
+    }
+}
+
+function createStreamingBubble() {
+    const container = document.getElementById('messagesContainer');
+    const row = document.createElement('div');
+    row.className = 'message-row assistant';
+    row.id = 'streamingMessage';
+    row.innerHTML = `
+        <div class="message-avatar"><i class="ri-robot-2-fill"></i></div>
+        <div class="message-bubble streaming-bubble"><span class="cursor-blink">|</span></div>
+    `;
+    container.appendChild(row);
+    scrollToBottom();
+}
+
+function updateStreamingBubble(content) {
+    const bubble = document.querySelector('#streamingMessage .message-bubble');
+    if (bubble) {
+        bubble.innerHTML = formatContent(content) + '<span class="cursor-blink">|</span>';
+    }
+}
+
+function finalizeStreamingBubble(content) {
+    const bubble = document.querySelector('#streamingMessage .message-bubble');
+    if (bubble) {
+        bubble.innerHTML = formatContent(content);
+        bubble.classList.remove('streaming-bubble');
+    }
+    const el = document.getElementById('streamingMessage');
+    if (el) el.removeAttribute('id');
+}
+
+function removeStreamingBubble() {
+    document.getElementById('streamingMessage')?.remove();
+}
+
+function showThinkingWithText(text) {
+    removeThinking();
+    const container = document.getElementById('messagesContainer');
+    const el = document.createElement('div');
+    el.id = 'thinkingIndicator';
+    el.className = 'message-row assistant';
+    el.innerHTML = `
+        <div class="message-avatar"><i class="ri-robot-2-fill"></i></div>
+        <div class="thinking-indicator">
+            <div class="thinking-dots"><span></span><span></span><span></span></div>
+            <span>${escapeHtml(text)}</span>
+        </div>
+    `;
+    container.appendChild(el);
+    scrollToBottom();
+}
+
+function showToolRunning(toolName, params) {
+    removeThinking();
+    removeToolRunning();
+    const container = document.getElementById('messagesContainer');
+    const el = document.createElement('div');
+    el.id = 'toolRunningIndicator';
+    el.className = 'message-row assistant';
+
+    const toolIcons = {
+        shell_tool: 'ri-terminal-box-line',
+        file_tool: 'ri-file-code-line',
+        search_tool: 'ri-search-line',
+        browser_tool: 'ri-global-line',
+        webdev_tool: 'ri-code-s-slash-line',
+        generate_tool: 'ri-image-line',
+        slides_tool: 'ri-slideshow-line',
+        schedule_tool: 'ri-calendar-line',
+        message_tool: 'ri-message-2-line',
+    };
+    const icon = toolIcons[toolName] || 'ri-tools-line';
+
+    el.innerHTML = `
+        <div class="message-avatar"><i class="ri-robot-2-fill"></i></div>
+        <div class="tool-running">
+            <div class="tool-running-header">
+                <i class="${icon} tool-spin"></i>
+                <span>Menjalankan <strong>${escapeHtml(toolName)}</strong>...</span>
+            </div>
+        </div>
+    `;
+    container.appendChild(el);
+    scrollToBottom();
+}
+
+function removeToolRunning() {
+    document.getElementById('toolRunningIndicator')?.remove();
+}
+
+function updateStatusBar(text) {
+    const el = document.getElementById('statusText');
+    if (el) el.textContent = text;
 }
 
 function quickAction(text) {
@@ -214,6 +393,7 @@ function appendToolCard(toolExec) {
 }
 
 function showThinking() {
+    removeThinking();
     const container = document.getElementById('messagesContainer');
     const el = document.createElement('div');
     el.id = 'thinkingIndicator';
@@ -395,7 +575,7 @@ function autoResize(textarea) {
 
 function scrollToBottom() {
     const container = document.getElementById('messagesContainer');
-    setTimeout(() => container.scrollTop = container.scrollHeight, 50);
+    requestAnimationFrame(() => container.scrollTop = container.scrollHeight);
 }
 
 function formatContent(text) {
