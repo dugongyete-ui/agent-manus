@@ -562,6 +562,8 @@ function switchTab(tab) {
     if (tab === 'tools') loadTools();
     if (tab === 'schedule') loadScheduleTasks();
     if (tab === 'skills') loadSkills();
+    if (tab === 'learning') loadLearning();
+    if (tab === 'security') loadSecurity();
 }
 
 function handleKeyDown(e) {
@@ -706,6 +708,204 @@ async function loadSkills() {
         }).join('');
     } catch (e) {
         console.error('Failed to load skills:', e);
+    }
+}
+
+async function loadLearning() {
+    try {
+        const [statsData, insightsData, metaData, toolPrefData] = await Promise.all([
+            api('/api/learning/stats'),
+            api('/api/learning/insights'),
+            api('/api/learning/meta/summary'),
+            api('/api/learning/tool-preferences'),
+        ]);
+
+        const statsEl = document.getElementById('learningStats');
+        const trendIcon = statsData.trend === 'improving' ? 'ri-arrow-up-line' : statsData.trend === 'declining' ? 'ri-arrow-down-line' : 'ri-subtract-line';
+        const trendColor = statsData.trend === 'improving' ? 'var(--success)' : statsData.trend === 'declining' ? 'var(--error)' : 'var(--text-muted)';
+        statsEl.innerHTML = `
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">${statsData.total_feedback || 0}</div>
+                    <div class="stat-label">Total Feedback</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:var(--success)">${statsData.positive || 0}</div>
+                    <div class="stat-label">Positive</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" style="color:var(--error)">${statsData.negative || 0}</div>
+                    <div class="stat-label">Negative</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${((statsData.satisfaction_rate || 0) * 100).toFixed(0)}%</div>
+                    <div class="stat-label">Satisfaction</div>
+                </div>
+            </div>
+            <div class="trend-bar">
+                <i class="${trendIcon}" style="color:${trendColor}"></i>
+                <span style="color:${trendColor}">${statsData.trend || 'neutral'}</span>
+                <span style="color:var(--text-muted);margin-left:8px">Avg Score: ${(statsData.avg_score || 0).toFixed(2)}</span>
+            </div>
+        `;
+
+        const insightsEl = document.getElementById('learningInsights');
+        const patterns = insightsData.patterns || [];
+        const recommendations = insightsData.recommendations || [];
+        if (patterns.length === 0 && recommendations.length === 0) {
+            insightsEl.innerHTML = '<div class="insight-empty">Belum ada insight. Gunakan agent lebih banyak.</div>';
+        } else {
+            insightsEl.innerHTML = patterns.map(p => `<div class="insight-item pattern"><i class="ri-flashlight-line"></i>${escapeHtml(p)}</div>`).join('') +
+                recommendations.map(r => `<div class="insight-item recommendation"><i class="ri-arrow-right-circle-line"></i>${escapeHtml(r)}</div>`).join('');
+        }
+
+        const toolPerfEl = document.getElementById('learningToolPerf');
+        const policies = statsData.tool_policies || {};
+        const policyKeys = Object.keys(policies);
+        if (policyKeys.length === 0) {
+            toolPerfEl.innerHTML = '<div class="insight-empty">Belum ada data performa tool.</div>';
+        } else {
+            toolPerfEl.innerHTML = policyKeys.map(name => {
+                const p = policies[name];
+                const successRate = ((p.success_rate || 0) * 100).toFixed(0);
+                const barColor = successRate >= 70 ? 'var(--success)' : successRate >= 40 ? 'var(--warning)' : 'var(--error)';
+                return `<div class="tool-perf-item">
+                    <div class="tool-perf-name">${escapeHtml(name)}</div>
+                    <div class="tool-perf-bar-wrap">
+                        <div class="tool-perf-bar" style="width:${successRate}%;background:${barColor}"></div>
+                    </div>
+                    <div class="tool-perf-stat">${successRate}% (${p.usage_count || 0} uses)</div>
+                </div>`;
+            }).join('');
+        }
+
+        const metaEl = document.getElementById('metaLearning');
+        metaEl.innerHTML = `
+            <div class="meta-card">
+                <div class="meta-status ${metaData.status || 'initializing'}">${metaData.status || 'initializing'}</div>
+                <div class="meta-info">
+                    <span>Patterns: <strong>${metaData.patterns_count || 0}</strong></span>
+                    <span>Strategies: <strong>${metaData.strategies_count || 0}</strong></span>
+                </div>
+                ${metaData.task_types_learned && metaData.task_types_learned.length > 0 ?
+                    `<div class="meta-types">${metaData.task_types_learned.map(t => `<span class="meta-type-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+                ${metaData.overall_success_rate !== undefined ?
+                    `<div class="meta-rate">Overall Success: <strong>${((metaData.overall_success_rate || 0) * 100).toFixed(0)}%</strong></div>` : ''}
+            </div>
+        `;
+    } catch (e) {
+        console.error('Error loading learning:', e);
+    }
+}
+
+async function loadSecurity() {
+    try {
+        const [auditData, eventsData, rbacData, privacyData, complianceData] = await Promise.all([
+            api('/api/security/audit'),
+            api('/api/security/events?limit=20'),
+            api('/api/security/rbac/stats'),
+            api('/api/security/privacy/stats'),
+            api('/api/security/privacy/compliance'),
+        ]);
+
+        const auditEl = document.getElementById('securityAudit');
+        const gradeColor = auditData.grade === 'A' ? 'var(--success)' : auditData.grade === 'B' ? 'var(--info)' : auditData.grade === 'C' ? 'var(--warning)' : 'var(--error)';
+        auditEl.innerHTML = `
+            <div class="audit-score">
+                <div class="audit-grade" style="color:${gradeColor}">${auditData.grade || '-'}</div>
+                <div class="audit-number">${auditData.score || 0}/100</div>
+            </div>
+            <div class="audit-summary">
+                <span class="audit-badge pass"><i class="ri-check-line"></i> ${auditData.passed || 0} passed</span>
+                <span class="audit-badge warn"><i class="ri-alert-line"></i> ${auditData.warnings || 0} warnings</span>
+                <span class="audit-badge fail"><i class="ri-close-line"></i> ${auditData.failed || 0} failed</span>
+            </div>
+            <div class="audit-findings">
+                ${(auditData.findings || []).map(f => {
+                    const icon = f.status === 'pass' ? 'ri-check-line' : f.status === 'warning' ? 'ri-alert-line' : 'ri-close-circle-line';
+                    const cls = f.status === 'pass' ? 'pass' : f.status === 'warning' ? 'warn' : 'fail';
+                    return `<div class="finding-item ${cls}"><i class="${icon}"></i><span>${escapeHtml(f.check)}</span></div>`;
+                }).join('')}
+            </div>
+        `;
+
+        const eventsEl = document.getElementById('securityEvents');
+        const events = eventsData.events || [];
+        if (events.length === 0) {
+            eventsEl.innerHTML = '<div class="insight-empty">Tidak ada event keamanan.</div>';
+        } else {
+            eventsEl.innerHTML = events.slice(0, 10).map(e => {
+                const levelColor = e.threat_level === 'critical' ? 'var(--error)' : e.threat_level === 'high' ? 'var(--warning)' : e.threat_level === 'medium' ? 'var(--info)' : 'var(--text-muted)';
+                const timeStr = new Date(e.timestamp * 1000).toLocaleTimeString();
+                return `<div class="event-item">
+                    <div class="event-level" style="background:${levelColor}">${e.threat_level}</div>
+                    <div class="event-info">
+                        <div class="event-desc">${escapeHtml(e.description)}</div>
+                        <div class="event-meta">${escapeHtml(e.event_type)} - ${timeStr}</div>
+                    </div>
+                    ${!e.resolved ? `<button class="btn-xs" onclick="resolveEvent('${e.event_id}')"><i class="ri-check-line"></i></button>` : '<span class="event-resolved">Resolved</span>'}
+                </div>`;
+            }).join('');
+        }
+
+        const rbacEl = document.getElementById('rbacStats');
+        rbacEl.innerHTML = `
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-value">${rbacData.total_accounts || 0}</div>
+                    <div class="stat-label">Accounts</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${rbacData.active_accounts || 0}</div>
+                    <div class="stat-label">Active</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${rbacData.active_sessions || 0}</div>
+                    <div class="stat-label">Sessions</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">${rbacData.permissions_count || 0}</div>
+                    <div class="stat-label">Permissions</div>
+                </div>
+            </div>
+            ${rbacData.role_distribution ? `<div class="role-dist">${Object.entries(rbacData.role_distribution).map(([role, count]) => `<span class="role-tag">${escapeHtml(role)}: ${count}</span>`).join('')}</div>` : ''}
+        `;
+
+        const privacyEl = document.getElementById('privacyStats');
+        const compScore = complianceData.compliance_score || 0;
+        const compColor = compScore >= 80 ? 'var(--success)' : compScore >= 50 ? 'var(--warning)' : 'var(--error)';
+        privacyEl.innerHTML = `
+            <div class="compliance-score">
+                <div class="compliance-bar-wrap">
+                    <div class="compliance-bar" style="width:${compScore}%;background:${compColor}"></div>
+                </div>
+                <span class="compliance-pct" style="color:${compColor}">${compScore}% Compliant</span>
+            </div>
+            <div class="privacy-details">
+                <div class="privacy-row"><span>Consent Records</span><strong>${privacyData.total_consent_records || 0}</strong></div>
+                <div class="privacy-row"><span>Active Consents</span><strong>${privacyData.active_consents || 0}</strong></div>
+                <div class="privacy-row"><span>Access Logs</span><strong>${privacyData.total_access_logs || 0}</strong></div>
+                <div class="privacy-row"><span>PII Patterns</span><strong>${privacyData.pii_detection_patterns || 0}</strong></div>
+                <div class="privacy-row"><span>Encryption</span><strong style="color:var(--success)">${privacyData.encryption_active ? 'Active' : 'Inactive'}</strong></div>
+                <div class="privacy-row"><span>Retention Days</span><strong>${privacyData.data_retention_days || 0}</strong></div>
+            </div>
+            ${complianceData.checks ? `<div class="compliance-checks">${complianceData.checks.map(c => {
+                const icon = c.status === 'compliant' ? 'ri-check-line' : 'ri-alert-line';
+                const cls = c.status === 'compliant' ? 'pass' : 'warn';
+                return `<div class="finding-item ${cls}"><i class="${icon}"></i><span>${escapeHtml(c.requirement)}</span></div>`;
+            }).join('')}</div>` : ''}
+        `;
+    } catch (e) {
+        console.error('Error loading security:', e);
+    }
+}
+
+async function resolveEvent(eventId) {
+    try {
+        await api(`/api/security/events/${eventId}/resolve`, { method: 'POST' });
+        loadSecurity();
+    } catch (e) {
+        console.error('Error resolving event:', e);
     }
 }
 

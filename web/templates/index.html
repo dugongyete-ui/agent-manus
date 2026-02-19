@@ -108,6 +108,12 @@
                         <button class="panel-tab" data-tab="skills" onclick="switchTab('skills')">
                             <i class="ri-lightbulb-line"></i> Skills
                         </button>
+                        <button class="panel-tab" data-tab="learning" onclick="switchTab('learning')">
+                            <i class="ri-line-chart-line"></i> Learning
+                        </button>
+                        <button class="panel-tab" data-tab="security" onclick="switchTab('security')">
+                            <i class="ri-shield-check-line"></i> Security
+                        </button>
                     </div>
 
                     <div class="panel-content" id="activityTab">
@@ -153,6 +159,36 @@
                                 <i class="ri-lightbulb-line"></i>
                                 <p>No skills loaded</p>
                             </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-content hidden" id="learningTab">
+                        <div class="learning-section">
+                            <div class="section-header"><i class="ri-bar-chart-line"></i> Feedback Stats</div>
+                            <div class="learning-stats" id="learningStats">
+                                <div class="empty-state"><i class="ri-line-chart-line"></i><p>Loading...</p></div>
+                            </div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-lightbulb-flash-line"></i> Insights</div>
+                            <div class="learning-insights" id="learningInsights"></div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-tools-line"></i> Tool Performance</div>
+                            <div class="learning-tools" id="learningToolPerf"></div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-brain-line"></i> Meta-Learning</div>
+                            <div class="meta-learning" id="metaLearning"></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-content hidden" id="securityTab">
+                        <div class="security-section">
+                            <div class="section-header"><i class="ri-shield-star-line"></i> Security Audit</div>
+                            <div class="security-audit" id="securityAudit">
+                                <div class="empty-state"><i class="ri-shield-check-line"></i><p>Loading...</p></div>
+                            </div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-alarm-warning-line"></i> Recent Events</div>
+                            <div class="security-events" id="securityEvents"></div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-user-settings-line"></i> Access Control</div>
+                            <div class="rbac-stats" id="rbacStats"></div>
+                            <div class="section-header" style="margin-top:12px"><i class="ri-lock-line"></i> Privacy & Compliance</div>
+                            <div class="privacy-stats" id="privacyStats"></div>
                         </div>
                     </div>
                 </aside>

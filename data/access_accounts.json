@@ -1,0 +1,38 @@
+{
+  "accounts": [
+    {
+      "user_id": "admin_001",
+      "username": "admin",
+      "role": "admin",
+      "api_key": "e09988896aac2548d4b121216f35beec4cadd23a21075ee260b52c1445259a41",
+      "is_active": true,
+      "created_at": 1771492164.286939,
+      "last_login": 0.0,
+      "login_count": 0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "custom_permissions": [],
+      "denied_permissions": [],
+      "password_hash": "962ec54daabce764111f7dcf7d7bc96af8c948c81d94168c55d814a2c2f58fb5"
+    },
+    {
+      "user_id": "user_001",
+      "username": "user",
+      "role": "user",
+      "api_key": "4d59b92148b514446d47fd5da6b87913d49105b71de9625a93f1150f3fd1c971",
+      "is_active": true,
+      "created_at": 1771492164.2869492,
+      "last_login": 0.0,
+      "login_count": 0,
+      "failed_attempts": 0,
+      "locked_until": 0.0,
+      "custom_permissions": [],
+      "denied_permissions": [],
+      "password_hash": "1441ba5e076efac3dcc23b6289af2be3865a59ee728945374f5ab7e1c84c94c0"
+    }
+  ],
+  "metadata": {
+    "last_updated": 1771492164.2869596,
+    "total_accounts": 2
+  }
+}

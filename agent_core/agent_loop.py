@@ -125,6 +125,11 @@ class AgentLoop:
                     self.context_manager.add_message("assistant", response)
                     self.state = AgentState.COMPLETED
                     self._save_to_knowledge(user_input, response)
+                    duration_total = int((time.time() - start_time) * 1000)
+                    self.meta_learner.record_execution(
+                        user_input, self._current_tools_used, True,
+                        duration_total, self.iteration_count
+                    )
                     return response
 
                 elif action["type"] == "use_tool":
@@ -164,6 +169,11 @@ class AgentLoop:
             final = await self._generate_final_response()
             self.context_manager.add_message("assistant", final)
             self.state = AgentState.COMPLETED
+            duration_total = int((time.time() - start_time) * 1000)
+            self.meta_learner.record_execution(
+                user_input, self._current_tools_used, True,
+                duration_total, self.iteration_count
+            )
             return final
 
         except Exception as e:
