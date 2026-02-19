@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manus Agent</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@4.1.0/fonts/remixicon.css" rel="stylesheet">
+</head>
+<body>
+    <div id="app">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="ri-robot-2-fill"></i>
+                    <span>Manus Agent</span>
+                </div>
+                <button class="btn-icon" onclick="toggleSidebar()" title="Toggle sidebar">
+                    <i class="ri-menu-fold-line"></i>
+                </button>
+            </div>
+            <button class="btn-new-chat" onclick="createNewSession()">
+                <i class="ri-add-line"></i>
+                <span>New Chat</span>
+            </button>
+            <div class="session-list" id="sessionList"></div>
+            <div class="sidebar-footer">
+                <div class="agent-status" id="agentStatus">
+                    <div class="status-dot"></div>
+                    <span>Agent Ready</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-area">
+            <header class="top-bar">
+                <button class="btn-icon sidebar-toggle" onclick="toggleSidebar()">
+                    <i class="ri-menu-line"></i>
+                </button>
+                <div class="session-title" id="sessionTitle">Select or create a chat</div>
+                <div class="top-actions">
+                    <button class="btn-icon" onclick="toggleActivityPanel()" title="Activity">
+                        <i class="ri-pulse-line"></i>
+                    </button>
+                    <button class="btn-icon" onclick="toggleFileExplorer()" title="Files">
+                        <i class="ri-folder-3-line"></i>
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-area">
+                <div class="chat-panel" id="chatPanel">
+                    <div class="messages-container" id="messagesContainer">
+                        <div class="welcome-screen" id="welcomeScreen">
+                            <div class="welcome-icon">
+                                <i class="ri-robot-2-fill"></i>
+                            </div>
+                            <h2>Manus Agent</h2>
+                            <p>AI Agent otonom dengan kemampuan tools lengkap</p>
+                            <div class="capability-grid">
+                                <div class="capability-card" onclick="quickAction('Tolong buatkan file Python hello world')">
+                                    <i class="ri-code-s-slash-line"></i>
+                                    <span>Code Execution</span>
+                                </div>
+                                <div class="capability-card" onclick="quickAction('Cari informasi terbaru tentang AI')">
+                                    <i class="ri-search-line"></i>
+                                    <span>Web Search</span>
+                                </div>
+                                <div class="capability-card" onclick="quickAction('List semua file di direktori saat ini')">
+                                    <i class="ri-folder-open-line"></i>
+                                    <span>File Operations</span>
+                                </div>
+                                <div class="capability-card" onclick="quickAction('Jalankan perintah uname -a di terminal')">
+                                    <i class="ri-terminal-box-line"></i>
+                                    <span>Shell Commands</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="input-area">
+                        <div class="input-wrapper">
+                            <textarea id="messageInput" placeholder="Ketik pesan untuk agent..." rows="1" onkeydown="handleKeyDown(event)"></textarea>
+                            <button class="btn-send" id="sendBtn" onclick="sendMessage()">
+                                <i class="ri-send-plane-fill"></i>
+                            </button>
+                        </div>
+                        <div class="input-hint">Enter untuk kirim, Shift+Enter untuk baris baru</div>
+                    </div>
+                </div>
+
+                <aside class="right-panel" id="rightPanel">
+                    <div class="panel-tabs">
+                        <button class="panel-tab active" data-tab="activity" onclick="switchTab('activity')">
+                            <i class="ri-pulse-line"></i> Activity
+                        </button>
+                        <button class="panel-tab" data-tab="files" onclick="switchTab('files')">
+                            <i class="ri-folder-3-line"></i> Files
+                        </button>
+                        <button class="panel-tab" data-tab="tools" onclick="switchTab('tools')">
+                            <i class="ri-tools-line"></i> Tools
+                        </button>
+                    </div>
+
+                    <div class="panel-content" id="activityTab">
+                        <div class="activity-list" id="activityList">
+                            <div class="empty-state">
+                                <i class="ri-pulse-line"></i>
+                                <p>No activity yet</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="panel-content hidden" id="filesTab">
+                        <div class="file-explorer" id="fileExplorer">
+                            <div class="file-path-bar">
+                                <button class="btn-icon btn-sm" onclick="navigateFiles('..')">
+                                    <i class="ri-arrow-up-line"></i>
+                                </button>
+                                <span id="currentPath">.</span>
+                            </div>
+                            <div class="file-list" id="fileList"></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-content hidden" id="toolsTab">
+                        <div class="tools-list" id="toolsList"></div>
+                    </div>
+                </aside>
+            </div>
+        </main>
+    </div>
+
+    <div class="code-viewer-modal hidden" id="codeModal">
+        <div class="code-viewer">
+            <div class="code-header">
+                <span id="codeFileName">file.py</span>
+                <button class="btn-icon" onclick="closeCodeViewer()">
+                    <i class="ri-close-line"></i>
+                </button>
+            </div>
+            <pre class="code-content" id="codeContent"></pre>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
