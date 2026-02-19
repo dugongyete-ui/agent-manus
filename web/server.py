@@ -41,7 +41,7 @@ from web.database import (
     delete_session, update_session_title, add_message, get_messages,
     build_context_string, log_tool_execution, get_tool_executions
 )
-from agent_core.agent_loop import AgentLoop, SYSTEM_PROMPT
+from agent_core.agent_loop import AgentLoop, SYSTEM_PROMPT, detect_intent
 from agent_core.llm_client import LLMClient, AVAILABLE_MODELS, MODEL_CATEGORIES
 from agent_core.knowledge_base import KnowledgeBase
 from agent_core.context_manager import ContextManager

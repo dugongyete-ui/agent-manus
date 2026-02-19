@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Optional
 
@@ -17,67 +18,172 @@ from agent_core.security_manager import SecurityManager
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang WAJIB menggunakan tools untuk menyelesaikan tugas pengguna.
-Kamu BUKAN chatbot biasa. Kamu adalah AGEN EKSEKUSI. Kamu HARUS menjalankan tools secara langsung.
-Kamu memiliki akses penuh ke semua tools dan BISA menjalankannya secara nyata di server.
+SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom. Output HANYA JSON murni.
 
-ATURAN UTAMA:
-- SELALU respons dalam format JSON MURNI, TANPA teks tambahan di luar JSON.
-- JANGAN PERNAH bilang "saya tidak bisa menjalankan tool" atau "akses eksekusi tool dimatikan" - itu SALAH. Tools AKTIF dan SIAP dijalankan.
-- JANGAN PERNAH hanya mendeskripsikan tools tanpa menggunakannya.
-- Jika pengguna meminta sesuatu yang bisa dikerjakan dengan tool, LANGSUNG gunakan tool tersebut.
-- Jika diminta "coba jalankan semua tools", jalankan satu per satu dengan multi_step.
+FORMAT:
+{"action":"use_tool","tool":"nama_tool","params":{...},"reasoning":"alasan"}
+{"action":"respond","message":"teks jawaban","reasoning":"alasan"}
+{"action":"multi_step","steps":[{"tool":"t","params":{}}],"reasoning":"alasan"}
 
-DAFTAR TOOLS YANG AKTIF:
-1. shell_tool - Eksekusi perintah terminal: ls, cat, grep, python3, node, pip, npm, curl, wget, dll.
-2. file_tool - Operasi file: read, write, edit, append, view, list, delete, copy, move, analyze, search, info.
-3. browser_tool - Browser web otomatis: navigate, screenshot, click, fill, type, extract_text, extract_links, execute_js, scroll, go_back, go_forward, wait_for.
-4. search_tool - Pencarian web DuckDuckGo + fetch halaman web.
-5. generate_tool - Generasi media: image, svg, chart, audio, video, document.
-6. slides_tool - Buat dan export presentasi ke HTML.
-7. webdev_tool - Scaffolding proyek web: React, Vue, Flask, Express, Next.js, FastAPI.
-8. schedule_tool - Penjadwalan tugas: interval, cron, one-time.
-9. message_tool - Kirim pesan/notifikasi ke pengguna.
-10. skill_manager - Manajemen skill modular: list, info, create, update, delete, run_script, search, reload.
+TOOLS:
+1. shell_tool: {"command":"cmd"} atau {"action":"run_code","code":"...","runtime":"python3"}
+2. file_tool: {"operation":"read|write|edit|list|delete|copy|move|analyze|search","path":"...","content":"..."}
+3. browser_tool: {"action":"navigate|screenshot|click|fill|extract_text|extract_links","url":"...","selector":"..."}
+4. search_tool: {"query":"..."} atau {"action":"fetch","url":"..."}
+5. generate_tool: {"type":"image|svg|chart|audio","prompt":"...","width":1024,"height":768}
+6. slides_tool: {"action":"create|add_slide|export","title":"...","slides":[{"title":"...","content":"..."}]}
+7. webdev_tool: {"action":"init|install_deps|build","framework":"react|vue|flask","name":"..."}
+8. schedule_tool: {"action":"create|list|cancel","name":"...","interval":60}
+9. message_tool: {"content":"...","type":"info|warning|success|error"}
+10. skill_manager: {"action":"list|info|create|run_script|search","name":"..."}
 
-FORMAT RESPONS (WAJIB JSON MURNI):
-
-Menggunakan satu tool:
-{"action": "use_tool", "tool": "nama_tool", "params": {"key": "value"}, "reasoning": "alasan singkat"}
-
-Menjawab langsung (HANYA jika tidak perlu tool):
-{"action": "respond", "message": "jawaban kamu di sini", "reasoning": "alasan"}
-
-Menggunakan beberapa tools berurutan:
-{"action": "multi_step", "steps": [{"tool": "tool1", "params": {}}, {"tool": "tool2", "params": {}}], "reasoning": "alasan"}
-
-PARAMETER TOOLS:
-- shell_tool: {"command": "perintah"} atau {"action": "run_code", "code": "kode", "runtime": "python3|node|bash"}
-- file_tool: {"operation": "read|write|edit|append|view|list|delete|copy|move|analyze|search|info", "path": "path", "content": "isi", "dest": "tujuan", "old_text": "lama", "new_text": "baru", "start_line": 1, "end_line": 10, "pattern": "*.py", "directory": "."}
-- browser_tool: {"action": "navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll|go_back|go_forward|wait_for", "url": "url", "selector": "css", "value": "nilai", "script": "js", "direction": "up|down|top|bottom", "path": "file.png", "full_page": false}
-- search_tool: {"query": "kata kunci"} atau {"action": "fetch", "url": "url"}
-- generate_tool: {"type": "image|svg|chart|audio|video|document", "prompt": "deskripsi", "width": 1024, "height": 1024, "style": "natural|abstract|modern", "duration": 5, "format": "png|svg|wav|mp4", "chart_type": "bar|pie|line", "data": {"labels": [], "values": []}}
-- slides_tool: {"action": "create|add_slide|export|list", "title": "judul", "content": "isi", "layout": "title|title_content", "author": "nama", "theme": "modern|dark|light", "slides": [{"title": "t", "content": "c"}]}
-- webdev_tool: {"action": "init|install_deps|add_dep|build|list_frameworks", "name": "nama", "framework": "react|vue|flask|express|nextjs|fastapi", "packages": ["pkg"], "project_dir": "dir"}
-- schedule_tool: {"action": "create|create_cron|create_once|cancel|pause|resume|list|status|history|stats", "name": "nama", "interval": 60, "cron_expression": "*/5 * * * *", "delay_seconds": 300, "callback": "default", "task_id": "id"}
-- skill_manager: {"action": "list|info|create|update|delete|run_script|search|reload", "name": "skill", "description": "desc", "capabilities": ["cap"], "script": "script", "args": {}, "query": "kata"}
-- message_tool: {"content": "pesan", "type": "info|warning|success|error|question|progress"}
-
-CONTOH INTERAKSI:
-User: "Tampilkan daftar file di direktori saat ini"
-Response: {"action": "use_tool", "tool": "shell_tool", "params": {"command": "ls -la"}, "reasoning": "Menampilkan daftar file"}
-
-User: "Cari informasi tentang Python"
-Response: {"action": "use_tool", "tool": "search_tool", "params": {"query": "Python programming language"}, "reasoning": "Mencari info tentang Python"}
-
-User: "Buat gambar sunset"
-Response: {"action": "use_tool", "tool": "generate_tool", "params": {"type": "image", "prompt": "beautiful sunset over ocean", "width": 1024, "height": 768, "style": "natural"}, "reasoning": "Membuat gambar sunset"}
-
-User: "Buka google.com"
-Response: {"action": "use_tool", "tool": "browser_tool", "params": {"action": "navigate", "url": "https://www.google.com"}, "reasoning": "Membuka Google"}
-
-INGAT: SELALU output JSON MURNI. JANGAN tambahkan teks apapun sebelum atau sesudah JSON. JANGAN gunakan markdown code blocks. LANGSUNG tulis JSON.
+WAJIB: Jika user minta buka website -> browser_tool navigate. Jika minta cari -> search_tool. Jika minta jalankan perintah -> shell_tool. Jika minta buat/baca file -> file_tool. SELALU eksekusi, JANGAN jelaskan.
+Output JSON MURNI tanpa markdown, tanpa teks tambahan.
 """
+
+INTENT_PATTERNS = [
+    {
+        "patterns": [
+            r"buka\s+((?:https?://)?(?:www\.)?[\w\-\.]+\.\w+[^\s]*)",
+            r"(?:navigasi|navigate|akses|kunjungi|visit|open)\s+((?:https?://)?(?:www\.)?[\w\-\.]+\.\w+[^\s]*)",
+            r"(?:buka|open|akses)\s+(?:situs|website|web|halaman|site)\s+([\w\-\.]+\.\w+[^\s]*)",
+            r"(?:analisis|analyze|lihat|cek|check)\s+(?:situs|website|web|halaman|site)\s+([\w\-\.]+\.\w+[^\s]*)",
+        ],
+        "tool": "browser_tool",
+        "build_params": lambda m: {"action": "navigate", "url": _ensure_url(m.group(1).strip().rstrip('.,;:'))},
+    },
+    {
+        "patterns": [
+            r"(?:cari|search|temukan|find|google)\s+(?:informasi\s+)?(?:tentang\s+|mengenai\s+|soal\s+|about\s+)?(.*)",
+            r"(?:cari|search|find)\s+(.*)",
+        ],
+        "tool": "search_tool",
+        "build_params": lambda m: {"query": m.group(1).strip().rstrip('.,;:')},
+    },
+    {
+        "patterns": [
+            r"(?:jalankan|run|eksekusi|execute)\s+(?:perintah|command|terminal|shell|cmd)\s*[:\-]?\s*(.*)",
+            r"(?:jalankan|run|eksekusi|execute)\s+((?:ls|cat|grep|find|pwd|echo|mkdir|pip|npm|curl|wget|python|node|git|apt|cd|df|du|ps|top|whoami|hostname|date|uname)(?:\s+.*)?)",
+            r"\$\s*(.*)",
+        ],
+        "tool": "shell_tool",
+        "build_params": lambda m: {"command": m.group(1).strip()},
+    },
+    {
+        "patterns": [
+            r"(?:buat|create|tulis|write)\s+file\s+([\w\-\./]+)\s+(?:dengan\s+(?:isi|konten|content)\s+)?(.*)",
+            r"(?:tulis|write)\s+(?:ke\s+)?file\s+([\w\-\./]+)",
+            r"(?:baca|read|tampilkan|show|lihat|view)\s+(?:file|isi)\s+([\w\-\./]+)",
+        ],
+        "tool": "file_tool",
+        "build_params": lambda m: _build_file_params(m),
+    },
+    {
+        "patterns": [
+            r"(?:buat|create|generate|hasilkan)\s+(?:gambar|image|foto|picture)\s+(.*)",
+            r"(?:buat|create|generate)\s+(?:grafik|chart)\s+(.*)",
+            r"(?:buat|create|generate)\s+(?:svg|ikon|icon)\s+(.*)",
+        ],
+        "tool": "generate_tool",
+        "build_params": lambda m: {"type": "image", "prompt": m.group(1).strip(), "width": 1024, "height": 768},
+    },
+    {
+        "patterns": [
+            r"(?:buat|create)\s+(?:presentasi|slides?|ppt)\s+(?:tentang\s+)?(.*)",
+        ],
+        "tool": "slides_tool",
+        "build_params": lambda m: {"action": "create", "title": m.group(1).strip(), "slides": [{"title": m.group(1).strip(), "content": "Konten presentasi"}]},
+    },
+    {
+        "patterns": [
+            r"(?:buat|create|init)\s+(?:proyek|project)\s+(?:web\s+)?(\w+)\s+(?:dengan|using|pakai)\s+(\w+)",
+            r"(?:buat|create|scaffold)\s+(?:aplikasi|app)\s+(\w+)\s+(\w+)",
+        ],
+        "tool": "webdev_tool",
+        "build_params": lambda m: {"action": "init", "name": m.group(1).strip(), "framework": m.group(2).strip().lower()},
+    },
+    {
+        "patterns": [
+            r"(?:jadwalkan|schedule|atur\s+jadwal)\s+(.*)",
+        ],
+        "tool": "schedule_tool",
+        "build_params": lambda m: {"action": "create", "name": m.group(1).strip(), "interval": 60},
+    },
+    {
+        "patterns": [
+            r"(?:daftar|list)\s+(?:skill|kemampuan|keahlian)",
+            r"(?:cari|search)\s+skill\s+(.*)",
+        ],
+        "tool": "skill_manager",
+        "build_params": lambda m: {"action": "list"} if "list" in (m.group(0) or "").lower() or "daftar" in (m.group(0) or "").lower() else {"action": "search", "query": m.group(1).strip() if m.lastindex else ""},
+    },
+    {
+        "patterns": [
+            r"(?:tampilkan|show|lihat)\s+(?:daftar\s+)?(?:file|direktori|folder)",
+            r"(?:ls|dir)\b",
+        ],
+        "tool": "shell_tool",
+        "build_params": lambda m: {"command": "ls -la"},
+    },
+    {
+        "patterns": [
+            r"(?:coba|test|uji)\s+(?:semua\s+)?tools?",
+            r"(?:jalankan|run)\s+(?:semua\s+)?tools?",
+            r"demo\s+(?:semua\s+)?tools?",
+        ],
+        "tool": "_all_tools_demo",
+        "build_params": lambda m: {},
+    },
+]
+
+
+def _ensure_url(url_str: str) -> str:
+    url_str = url_str.strip().rstrip('.,;:!?')
+    if not url_str.startswith("http"):
+        url_str = "https://" + url_str
+    return url_str
+
+
+def _build_file_params(m):
+    full = m.group(0).lower()
+    if any(w in full for w in ["baca", "read", "tampilkan", "show", "lihat", "view"]):
+        return {"operation": "read", "path": m.group(1).strip()}
+    path = m.group(1).strip()
+    content = m.group(2).strip() if m.lastindex >= 2 and m.group(2) else "# New file\n"
+    return {"operation": "write", "path": path, "content": content}
+
+
+def detect_intent(user_input: str) -> Optional[dict]:
+    text = user_input.strip()
+    for rule in INTENT_PATTERNS:
+        for pattern in rule["patterns"]:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                tool = rule["tool"]
+                if tool == "_all_tools_demo":
+                    return _build_all_tools_demo()
+                try:
+                    params = rule["build_params"](match)
+                except Exception:
+                    continue
+                if params:
+                    logger.info(f"Intent terdeteksi: {tool} dari '{text[:60]}' -> {params}")
+                    return {"type": "use_tool", "tool": tool, "params": params}
+    return None
+
+
+def _build_all_tools_demo():
+    return {
+        "type": "multi_step",
+        "steps": [
+            {"tool": "shell_tool", "params": {"command": "echo 'Shell tool aktif!' && date && uname -a"}},
+            {"tool": "file_tool", "params": {"operation": "list", "path": "."}},
+            {"tool": "search_tool", "params": {"query": "latest technology news 2026"}},
+            {"tool": "message_tool", "params": {"content": "Semua tools berhasil dijalankan!", "type": "success"}},
+            {"tool": "skill_manager", "params": {"action": "list"}},
+            {"tool": "schedule_tool", "params": {"action": "list"}},
+        ],
+    }
 
 
 class AgentState:
@@ -531,7 +637,7 @@ class AgentLoop:
                 parts.append(f"Assistant: {content}")
         return "\n\n".join(parts)
 
-    def _parse_llm_response(self, raw: str) -> dict:
+    def _parse_llm_response(self, raw: str, user_input: str = "") -> dict:
         raw = raw.strip()
 
         json_candidates = []
@@ -610,7 +716,6 @@ class AgentLoop:
             except (json.JSONDecodeError, ValueError):
                 continue
 
-        import re
         tool_pattern = re.search(
             r'(?:menggunakan|gunakan|use|call|jalankan|run)\s+(shell_tool|file_tool|browser_tool|search_tool|generate_tool|slides_tool|webdev_tool|schedule_tool|message_tool|skill_manager)',
             raw, re.IGNORECASE
@@ -622,6 +727,27 @@ class AgentLoop:
                 "tool": tool_name,
                 "params": {},
             }
+
+        if user_input:
+            intent = detect_intent(user_input)
+            if intent:
+                logger.info(f"Fallback intent detection dari user_input: {intent['type']}")
+                return intent
+
+        refusal_patterns = [
+            r"(?:saya|aku)\s+(?:tidak\s+)?(?:bisa|dapat|mampu)\s+(?:tidak\s+)?(?:langsung\s+)?(?:membuka|menjalankan|mengeksekusi|mengakses)",
+            r"(?:tidak\s+)?(?:memiliki|punya)\s+(?:akses|kemampuan)",
+            r"(?:sebagai\s+)?(?:AI|model\s+bahasa|asisten\s+virtual)",
+            r"(?:saya\s+)?(?:hanya\s+)?(?:bisa\s+)?(?:menjelaskan|mendeskripsikan|memberikan\s+gambaran)",
+            r"(?:i\s+)?(?:can'?t|cannot|unable\s+to)\s+(?:directly|actually)?\s*(?:open|run|execute|access|browse)",
+        ]
+        is_refusal = any(re.search(p, raw, re.IGNORECASE) for p in refusal_patterns)
+
+        if is_refusal and user_input:
+            intent = detect_intent(user_input)
+            if intent:
+                logger.info(f"LLM refused but intent detected, forcing tool: {intent}")
+                return intent
 
         return {"type": "respond", "message": raw}
 
