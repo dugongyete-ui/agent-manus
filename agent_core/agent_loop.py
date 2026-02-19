@@ -1,4 +1,4 @@
-"""Agent Loop - Implementasi Agent Loop (Analyze, Think, Select, Execute, Observe)."""
+"""Agent Loop - Implementasi Agent Loop (Plan, Think, Execute, Reflect, Synthesize)."""
 
 import json
 import logging
@@ -18,47 +18,119 @@ from agent_core.security_manager import SecurityManager
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """Kamu adalah Manus, agen AI otonom yang BENAR-BENAR mengeksekusi tools. Kamu BUKAN chatbot biasa.
+SYSTEM_PROMPT = """You are Manus, an autonomous AI agent that EXECUTES tools directly. You are NOT a regular chatbot.
+Kamu adalah Manus, agen AI otonom yang BENAR-BENAR mengeksekusi tools. Kamu BUKAN chatbot biasa.
 
-ATURAN MUTLAK:
-1. Output HANYA JSON murni, TANPA markdown, TANPA teks tambahan, TANPA penjelasan
-2. JANGAN PERNAH berkata "saya tidak bisa", "saya hanya AI", "saya tidak memiliki akses"
-3. SELALU gunakan tool yang tepat untuk setiap permintaan
-4. JANGAN menjelaskan apa yang akan kamu lakukan - LANGSUNG lakukan
+=== STRICT RULES / ATURAN MUTLAK ===
+1. Your output MUST be ONLY valid JSON. No markdown, no extra text, no explanations before or after the JSON.
+   Output HARUS berupa JSON murni saja. TANPA markdown, TANPA teks tambahan.
+2. NEVER say "I can't", "I'm just an AI", "I don't have access". You HAVE tools. USE them.
+   JANGAN PERNAH berkata "saya tidak bisa" atau "saya hanya AI". Kamu PUNYA tools. GUNAKAN.
+3. ALWAYS use the appropriate tool for every request. DO NOT just explain - EXECUTE.
+   SELALU gunakan tool yang tepat. JANGAN hanya menjelaskan - LAKUKAN.
+4. Think step by step before acting. Create a plan for complex tasks.
+   Berpikir langkah demi langkah sebelum bertindak. Buat rencana untuk tugas kompleks.
 
-FORMAT RESPONS (pilih salah satu, output JSON SAJA):
-{"action":"use_tool","tool":"nama_tool","params":{...}}
-{"action":"respond","message":"teks jawaban"}
-{"action":"multi_step","steps":[{"tool":"t","params":{}}]}
+=== RESPONSE FORMAT / FORMAT RESPONS ===
+Choose ONE of these JSON formats (output ONLY the JSON):
 
-TOOLS TERSEDIA:
-1. shell_tool: {"command":"cmd"} atau {"action":"run_code","code":"...","runtime":"python3"}
-2. file_tool: {"operation":"read|write|edit|list|delete|copy|move|analyze|search|info","path":"...","content":"..."}
-3. browser_tool: {"action":"navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll","url":"...","selector":"..."}
-4. search_tool: {"query":"..."} atau {"action":"fetch","url":"..."}
-5. generate_tool: {"type":"image|svg|chart|audio","prompt":"...","width":1024,"height":768}
-6. slides_tool: {"action":"create|add_slide|export|list","title":"...","slides":[{"title":"...","content":"..."}]}
-7. webdev_tool: {"action":"init|install_deps|add_dep|build|list_frameworks","framework":"react|vue|flask|express|nextjs|fastapi","name":"..."}
-8. schedule_tool: {"action":"create|list|cancel","name":"...","interval":60}
-9. message_tool: {"content":"...","type":"info|warning|success|error"}
-10. skill_manager: {"action":"list|info|create|run_script|search","name":"..."}
+1. PLAN - Create a plan before executing (for complex tasks):
+   {"action":"plan","goal":"what you want to achieve","steps":["step 1 description","step 2 description","step 3 description"]}
 
-PEMETAAN WAJIB:
-- "buka/open/navigate [URL]" -> {"action":"use_tool","tool":"browser_tool","params":{"action":"navigate","url":"..."}}
-- "cari/search [query]" -> {"action":"use_tool","tool":"search_tool","params":{"query":"..."}}
-- "jalankan/run [command]" -> {"action":"use_tool","tool":"shell_tool","params":{"command":"..."}}
-- "buat/baca/edit file" -> {"action":"use_tool","tool":"file_tool","params":{"operation":"...","path":"..."}}
-- "buat gambar/image" -> {"action":"use_tool","tool":"generate_tool","params":{"type":"image","prompt":"..."}}
-- pertanyaan umum -> {"action":"respond","message":"jawaban langsung"}
+2. THINK - Reason about the situation before deciding:
+   {"action":"think","thought":"your analysis and reasoning about what to do next"}
 
-CONTOH OUTPUT BENAR:
-{"action":"use_tool","tool":"search_tool","params":{"query":"berita terbaru AI 2026"}}
-{"action":"use_tool","tool":"browser_tool","params":{"action":"navigate","url":"https://google.com"}}
-{"action":"use_tool","tool":"shell_tool","params":{"command":"ls -la"}}
-{"action":"respond","message":"Ini adalah jawaban saya..."}
+3. USE TOOL - Execute a single tool:
+   {"action":"use_tool","tool":"tool_name","params":{"key":"value"}}
 
-INGAT: Output JSON murni. Tidak ada teks sebelum atau sesudah JSON. Tidak ada markdown code block.
+4. MULTI STEP - Execute multiple tools in sequence:
+   {"action":"multi_step","steps":[{"tool":"tool_name","params":{"key":"value"}},{"tool":"tool_name2","params":{"key":"value"}}]}
+
+5. RESPOND - Give a text answer (only when no tool is needed):
+   {"action":"respond","message":"your response text here"}
+
+=== AVAILABLE TOOLS / TOOLS TERSEDIA ===
+1. shell_tool: Run shell commands or code
+   params: {"command":"cmd"} or {"action":"run_code","code":"...","runtime":"python3"}
+2. file_tool: File system operations
+   params: {"operation":"read|write|edit|list|delete|copy|move|analyze|search|info","path":"...","content":"..."}
+3. browser_tool: Web browser interaction
+   params: {"action":"navigate|screenshot|click|fill|type|extract_text|extract_links|execute_js|scroll","url":"...","selector":"..."}
+4. search_tool: Internet search
+   params: {"query":"..."} or {"action":"fetch","url":"..."}
+5. generate_tool: Generate media (image/svg/chart/audio)
+   params: {"type":"image|svg|chart|audio","prompt":"...","width":1024,"height":768}
+6. slides_tool: Create presentations
+   params: {"action":"create|add_slide|export|list","title":"...","slides":[{"title":"...","content":"..."}]}
+7. webdev_tool: Web development projects
+   params: {"action":"init|install_deps|add_dep|build|list_frameworks","framework":"react|vue|flask|express|nextjs|fastapi","name":"..."}
+8. schedule_tool: Schedule tasks
+   params: {"action":"create|list|cancel","name":"...","interval":60}
+9. message_tool: Send messages to user
+   params: {"content":"...","type":"info|warning|success|error"}
+10. skill_manager: Manage skills
+    params: {"action":"list|info|create|run_script|search","name":"..."}
+
+=== MAPPING / PEMETAAN WAJIB ===
+- "open/buka/navigate [URL]" -> use browser_tool with navigate
+- "search/cari [query]" -> use search_tool
+- "run/jalankan [command]" -> use shell_tool
+- "create/read/edit file" -> use file_tool
+- "generate image/buat gambar" -> use generate_tool
+- general question/pertanyaan umum -> respond with answer
+
+=== WORKFLOW FOR COMPLEX TASKS ===
+Step 1: Output {"action":"plan",...} to create a plan
+Step 2: Output {"action":"use_tool",...} for each step
+Step 3: After seeing results, decide next action
+Step 4: When done, output {"action":"respond",...} with final summary
+
+REMEMBER: Output ONLY valid JSON. Nothing before or after. No markdown code blocks.
+INGAT: Output HANYA JSON valid. Tidak ada teks sebelum atau sesudah JSON. Tidak ada markdown code block.
 """
+
+PLANNING_PROMPT = """You are analyzing a user request to create an execution plan.
+Analyze the request and determine what tools to use and in what order.
+
+User request: {user_input}
+
+Respond with ONLY this JSON format:
+{{"action":"plan","goal":"clear description of what to achieve","steps":["step 1: description with tool_name","step 2: description with tool_name","step 3: ..."]}}
+
+If the request is a simple question that needs no tools, respond with:
+{{"action":"respond","message":"your direct answer"}}
+
+Output ONLY valid JSON. No other text."""
+
+REFLECTION_PROMPT = """You just executed a tool and got a result. Analyze it and decide what to do next.
+
+Original goal: {goal}
+Current plan: {plan_summary}
+Step just completed: {completed_step}
+Result: {result}
+Steps remaining: {remaining_steps}
+
+Based on the result, decide your next action. Respond with ONLY ONE of these JSON formats:
+
+If more work is needed (continue with plan):
+{{"action":"use_tool","tool":"tool_name","params":{{...}}}}
+
+If the result requires a different approach:
+{{"action":"think","thought":"analysis of why we need to change approach and what to do instead"}}
+
+If all work is done and you can give a final answer:
+{{"action":"respond","message":"comprehensive summary of everything done and results"}}
+
+Output ONLY valid JSON. No other text."""
+
+SYNTHESIS_PROMPT = """Based on everything that was done, provide a comprehensive final response to the user.
+
+Original request: {user_input}
+Execution log:
+{execution_summary}
+
+Provide a clear, helpful summary of what was accomplished, including key results and findings.
+Respond as plain text, not JSON. Be thorough but concise."""
 
 INTENT_PATTERNS = [
     {
@@ -219,10 +291,13 @@ def _build_all_tools_demo():
 class AgentState:
     IDLE = "idle"
     ANALYZING = "analyzing"
+    PLANNING = "planning"
     THINKING = "thinking"
     SELECTING = "selecting"
     EXECUTING = "executing"
+    REFLECTING = "reflecting"
     OBSERVING = "observing"
+    SYNTHESIZING = "synthesizing"
     COMPLETED = "completed"
     ERROR = "error"
 
@@ -249,6 +324,8 @@ class AgentLoop:
         self._tool_executors: dict = {}
         self._tool_instances: dict = {}
         self._current_tools_used: list[str] = []
+        self._current_plan: Optional[dict] = None
+        self._plan_step_index: int = 0
 
         self.context_manager.set_system_prompt(SYSTEM_PROMPT)
 
@@ -260,29 +337,176 @@ class AgentLoop:
         self._tool_executors[tool_name] = executor_fn
         logger.info(f"Executor terdaftar untuk alat: {tool_name}")
 
+    async def _create_initial_plan(self, user_input: str) -> Optional[dict]:
+        self.state = AgentState.PLANNING
+        logger.info("Phase 1 - PLANNING: Asking LLM to create execution plan...")
+
+        prompt = PLANNING_PROMPT.format(user_input=user_input)
+        try:
+            raw_response = await self.llm.chat(prompt)
+            logger.info(f"Planning response received ({len(raw_response)} chars)")
+
+            action = self._parse_llm_response(raw_response, user_input)
+
+            if action["type"] == "plan":
+                goal = action.get("goal", user_input)
+                steps = action.get("steps", [])
+                if steps:
+                    self.planner.create_plan(goal, steps)
+                    self._current_plan = {
+                        "goal": goal,
+                        "steps": steps,
+                        "results": [],
+                        "status": "in_progress",
+                    }
+                    self._plan_step_index = 0
+                    logger.info(f"Plan created: {goal} with {len(steps)} steps")
+                    self._log_step("plan_created", {"goal": goal, "steps": steps})
+                    return self._current_plan
+                else:
+                    logger.info("Plan had no steps, proceeding without plan")
+                    return None
+
+            elif action["type"] == "respond":
+                return {"direct_response": action["message"]}
+
+            elif action["type"] in ("use_tool", "multi_step"):
+                return {"immediate_action": action}
+
+            return None
+
+        except Exception as e:
+            logger.warning(f"Planning phase failed: {e}, proceeding without plan")
+            return None
+
+    async def _reflect_on_result(self, goal: str, completed_step: str, result: str, remaining_steps: list[str]) -> dict:
+        self.state = AgentState.REFLECTING
+        logger.info("Phase 3 - REFLECTION: Analyzing result and deciding next steps...")
+
+        plan_summary = self.planner.get_plan_summary() if self.planner.tasks else "No formal plan"
+        remaining_str = json.dumps(remaining_steps, ensure_ascii=False) if remaining_steps else "None"
+
+        result_truncated = result[:2000] if len(result) > 2000 else result
+
+        prompt = REFLECTION_PROMPT.format(
+            goal=goal,
+            plan_summary=plan_summary,
+            completed_step=completed_step,
+            result=result_truncated,
+            remaining_steps=remaining_str,
+        )
+
+        try:
+            raw_response = await self.llm.chat(prompt)
+            logger.info(f"Reflection response received ({len(raw_response)} chars)")
+            action = self._parse_llm_response(raw_response)
+            return action
+        except Exception as e:
+            logger.warning(f"Reflection failed: {e}")
+            if remaining_steps:
+                return {"type": "think", "thought": f"Reflection failed but continuing with remaining steps: {remaining_steps[0]}"}
+            return {"type": "respond", "message": f"Task completed. Result: {result_truncated}"}
+
     async def process_request(self, user_input: str) -> str:
         self.context_manager.add_message("user", user_input)
         self.iteration_count = 0
         self.execution_log.clear()
         self._current_tools_used = []
+        self._current_plan = None
+        self._plan_step_index = 0
         start_time = time.time()
 
         try:
+            plan_result = await self._create_initial_plan(user_input)
+
+            if plan_result and "direct_response" in plan_result:
+                response = plan_result["direct_response"]
+                self.context_manager.add_message("assistant", response)
+                self.state = AgentState.COMPLETED
+                self._save_to_knowledge(user_input, response)
+                return response
+
+            if plan_result and "immediate_action" in plan_result:
+                action = plan_result["immediate_action"]
+                if action["type"] == "use_tool":
+                    result = await self._execute_tool(action["tool"], action.get("params", {}))
+                    self.context_manager.add_message("assistant", f"Menggunakan {action['tool']}...")
+                    self.context_manager.add_message("system", f"[Hasil {action['tool']}]:\n{result}")
+                    self._log_step("execute", {"tool": action["tool"], "params": action.get("params", {}), "result": result[:500]})
+                elif action["type"] == "multi_step":
+                    all_results = []
+                    for step in action.get("steps", []):
+                        tool_name = step.get("tool", "")
+                        params = step.get("params", {})
+                        result = await self._execute_tool(tool_name, params)
+                        all_results.append(f"[{tool_name}]: {result}")
+                    combined = "\n".join(all_results)
+                    self.context_manager.add_message("assistant", "Menjalankan beberapa langkah...")
+                    self.context_manager.add_message("system", combined)
+
+            if self._current_plan and "steps" in self._current_plan:
+                plan_msg = f"📋 Plan: {self._current_plan['goal']}\n"
+                for i, step in enumerate(self._current_plan['steps'], 1):
+                    plan_msg += f"  {i}. {step}\n"
+                self.context_manager.add_message("assistant", plan_msg)
+                logger.info(f"Executing plan with {len(self._current_plan['steps'])} steps")
+
+            self.state = AgentState.EXECUTING
+
             while self.iteration_count < self.max_iterations:
                 self.iteration_count += 1
-                logger.info(f"--- Iterasi {self.iteration_count} ---")
+                logger.info(f"--- Iteration {self.iteration_count} ---")
+
+                if self._current_plan and "steps" in self._current_plan:
+                    if self._plan_step_index < len(self._current_plan["steps"]):
+                        current_step_desc = self._current_plan["steps"][self._plan_step_index]
+                        remaining = self._current_plan["steps"][self._plan_step_index + 1:]
+
+                        task = self.planner.get_next_task()
+                        if task:
+                            self.planner.update_task_status(task.task_id, TaskStatus.IN_PROGRESS)
+
+                        self.state = AgentState.THINKING
+                        step_prompt = f"Execute this step from your plan:\nStep: {current_step_desc}\nGoal: {self._current_plan['goal']}\n\nRespond with the appropriate tool action as JSON."
+                        self.context_manager.add_message("system", step_prompt)
 
                 self.state = AgentState.THINKING
                 context = self.context_manager.get_context_window()
                 llm_input = self._build_llm_prompt(context)
 
-                logger.info("Mengirim ke LLM...")
+                logger.info("Sending to LLM...")
                 raw_response = await self.llm.chat(llm_input)
-                logger.info(f"Respons LLM diterima ({len(raw_response)} karakter)")
+                logger.info(f"LLM response received ({len(raw_response)} chars)")
 
-                action = self._parse_llm_response(raw_response)
+                action = self._parse_llm_response(raw_response, user_input)
 
-                if action["type"] == "respond":
+                if action["type"] == "plan":
+                    goal = action.get("goal", user_input)
+                    steps = action.get("steps", [])
+                    if steps and not self._current_plan:
+                        self.planner.create_plan(goal, steps)
+                        self._current_plan = {
+                            "goal": goal,
+                            "steps": steps,
+                            "results": [],
+                            "status": "in_progress",
+                        }
+                        self._plan_step_index = 0
+                        plan_msg = f"📋 Plan: {goal}\n"
+                        for i, step in enumerate(steps, 1):
+                            plan_msg += f"  {i}. {step}\n"
+                        self.context_manager.add_message("assistant", plan_msg)
+                        self._log_step("plan_created", {"goal": goal, "steps": steps})
+                    continue
+
+                elif action["type"] == "think":
+                    thought = action.get("thought", "")
+                    logger.info(f"LLM thinking: {thought[:200]}")
+                    self.context_manager.add_message("assistant", f"💭 {thought}")
+                    self._log_step("think", {"thought": thought[:500]})
+                    continue
+
+                elif action["type"] == "respond":
                     response = action["message"]
                     self.context_manager.add_message("assistant", response)
                     self.state = AgentState.COMPLETED
@@ -292,6 +516,8 @@ class AgentLoop:
                         user_input, self._current_tools_used, True,
                         duration_total, self.iteration_count
                     )
+                    if self._current_plan:
+                        self._current_plan["status"] = "completed"
                     return response
 
                 elif action["type"] == "use_tool":
@@ -306,6 +532,52 @@ class AgentLoop:
 
                     self.state = AgentState.OBSERVING
                     self._log_step("execute", {"tool": tool_name, "params": params, "result": result[:500]})
+
+                    if self._current_plan and "steps" in self._current_plan:
+                        self._current_plan["results"].append({
+                            "step": self._plan_step_index,
+                            "tool": tool_name,
+                            "result": result[:1000],
+                        })
+
+                        task = None
+                        for t in self.planner.tasks:
+                            if t.status == TaskStatus.IN_PROGRESS:
+                                task = t
+                                break
+                        if task:
+                            task.tools_used.append(tool_name)
+                            self.planner.update_task_status(task.task_id, TaskStatus.COMPLETED, result[:500])
+
+                        self._plan_step_index += 1
+                        remaining = self._current_plan["steps"][self._plan_step_index:]
+
+                        reflection = await self._reflect_on_result(
+                            goal=self._current_plan["goal"],
+                            completed_step=self._current_plan["steps"][self._plan_step_index - 1],
+                            result=result,
+                            remaining_steps=remaining,
+                        )
+
+                        if reflection["type"] == "respond":
+                            response = reflection["message"]
+                            self.context_manager.add_message("assistant", response)
+                            self.state = AgentState.COMPLETED
+                            self._current_plan["status"] = "completed"
+                            self._save_to_knowledge(user_input, response)
+                            duration_total = int((time.time() - start_time) * 1000)
+                            self.meta_learner.record_execution(
+                                user_input, self._current_tools_used, True,
+                                duration_total, self.iteration_count
+                            )
+                            return response
+                        elif reflection["type"] == "think":
+                            thought = reflection.get("thought", "")
+                            self.context_manager.add_message("assistant", f"💭 {thought}")
+                            self._log_step("reflection_think", {"thought": thought[:500]})
+                        elif reflection["type"] == "use_tool":
+                            self.context_manager.add_message("system",
+                                f"[Reflection decided next action: {reflection.get('tool', 'unknown')}]")
 
                 elif action["type"] == "multi_step":
                     self.state = AgentState.EXECUTING
@@ -328,7 +600,8 @@ class AgentLoop:
                     self.state = AgentState.COMPLETED
                     return response
 
-            final = await self._generate_final_response()
+            self.state = AgentState.SYNTHESIZING
+            final = await self._generate_final_response(user_input)
             self.context_manager.add_message("assistant", final)
             self.state = AgentState.COMPLETED
             duration_total = int((time.time() - start_time) * 1000)
@@ -673,45 +946,62 @@ class AgentLoop:
         json_candidates = []
 
         if "```json" in raw:
-            start = raw.index("```json") + 7
-            rest = raw[start:]
-            end = rest.find("```")
-            if end == -1:
-                end = len(rest)
-            json_candidates.append(rest[:end].strip())
-        if "```" in raw and not json_candidates:
-            start = raw.index("```") + 3
-            rest = raw[start:]
-            end = rest.find("```")
-            if end == -1:
-                end = len(rest)
-            candidate = rest[:end].strip()
-            if candidate.startswith("{"):
-                json_candidates.append(candidate)
+            for match in re.finditer(r'```json\s*(.*?)```', raw, re.DOTALL):
+                candidate = match.group(1).strip()
+                if candidate:
+                    json_candidates.append(candidate)
 
-        first_brace = raw.find("{")
-        if first_brace != -1:
-            brace_count = 0
-            end_idx = 0
-            for i in range(first_brace, len(raw)):
-                if raw[i] == '{':
-                    brace_count += 1
-                elif raw[i] == '}':
-                    brace_count -= 1
-                    if brace_count == 0:
-                        end_idx = i + 1
-                        break
-            if end_idx > 0:
-                json_candidates.append(raw[first_brace:end_idx])
+        if "```" in raw and not json_candidates:
+            for match in re.finditer(r'```\s*(.*?)```', raw, re.DOTALL):
+                candidate = match.group(1).strip()
+                if candidate.startswith("{"):
+                    json_candidates.append(candidate)
+
+        brace_positions = []
+        i = 0
+        while i < len(raw):
+            if raw[i] == '{':
+                brace_count = 0
+                start = i
+                for j in range(i, len(raw)):
+                    if raw[j] == '{':
+                        brace_count += 1
+                    elif raw[j] == '}':
+                        brace_count -= 1
+                        if brace_count == 0:
+                            candidate = raw[start:j + 1]
+                            if candidate not in json_candidates:
+                                json_candidates.append(candidate)
+                            brace_positions.append((start, j + 1))
+                            i = j + 1
+                            break
+                else:
+                    i += 1
+            else:
+                i += 1
 
         for json_str in json_candidates:
             try:
+                json_str = re.sub(r',\s*}', '}', json_str)
+                json_str = re.sub(r',\s*]', ']', json_str)
+
                 parsed = json.loads(json_str)
                 if not isinstance(parsed, dict):
                     continue
                 action = parsed.get("action", "")
 
-                if action == "use_tool":
+                if action == "plan":
+                    return {
+                        "type": "plan",
+                        "goal": parsed.get("goal", ""),
+                        "steps": parsed.get("steps", []),
+                    }
+                elif action == "think":
+                    return {
+                        "type": "think",
+                        "thought": parsed.get("thought", ""),
+                    }
+                elif action == "use_tool":
                     return {
                         "type": "use_tool",
                         "tool": parsed.get("tool", ""),
@@ -734,14 +1024,57 @@ class AgentLoop:
                         "params": parsed.get("params", {}),
                     }
                 elif "steps" in parsed and isinstance(parsed["steps"], list):
+                    steps = parsed["steps"]
+                    if steps and isinstance(steps[0], dict) and "tool" in steps[0]:
+                        return {
+                            "type": "multi_step",
+                            "steps": steps,
+                        }
+                    elif steps and isinstance(steps[0], str):
+                        return {
+                            "type": "plan",
+                            "goal": parsed.get("goal", ""),
+                            "steps": steps,
+                        }
+                elif "goal" in parsed and "steps" in parsed:
                     return {
-                        "type": "multi_step",
-                        "steps": parsed["steps"],
+                        "type": "plan",
+                        "goal": parsed["goal"],
+                        "steps": parsed.get("steps", []),
+                    }
+                elif "thought" in parsed:
+                    return {
+                        "type": "think",
+                        "thought": parsed["thought"],
                     }
                 elif "message" in parsed:
                     return {
                         "type": "respond",
                         "message": parsed["message"],
+                    }
+                elif "command" in parsed:
+                    return {
+                        "type": "use_tool",
+                        "tool": "shell_tool",
+                        "params": parsed,
+                    }
+                elif "query" in parsed:
+                    return {
+                        "type": "use_tool",
+                        "tool": "search_tool",
+                        "params": parsed,
+                    }
+                elif "url" in parsed:
+                    return {
+                        "type": "use_tool",
+                        "tool": "browser_tool",
+                        "params": {"action": "navigate", "url": parsed["url"]},
+                    }
+                elif "operation" in parsed and "path" in parsed:
+                    return {
+                        "type": "use_tool",
+                        "tool": "file_tool",
+                        "params": parsed,
                     }
             except (json.JSONDecodeError, ValueError):
                 continue
@@ -752,17 +1085,15 @@ class AgentLoop:
         )
         if tool_pattern:
             tool_name = tool_pattern.group(1).lower()
+            if user_input:
+                intent = detect_intent(user_input)
+                if intent and intent.get("tool") == tool_name:
+                    return intent
             return {
                 "type": "use_tool",
                 "tool": tool_name,
                 "params": {},
             }
-
-        if user_input:
-            intent = detect_intent(user_input)
-            if intent:
-                logger.info(f"Fallback intent detection dari user_input: {intent['type']}")
-                return intent
 
         refusal_patterns = [
             r"(?:saya|aku)\s+(?:tidak\s+)?(?:bisa|dapat|mampu)\s+(?:tidak\s+)?(?:langsung\s+)?(?:membuka|menjalankan|mengeksekusi|mengakses)",
@@ -770,6 +1101,8 @@ class AgentLoop:
             r"(?:sebagai\s+)?(?:AI|model\s+bahasa|asisten\s+virtual)",
             r"(?:saya\s+)?(?:hanya\s+)?(?:bisa\s+)?(?:menjelaskan|mendeskripsikan|memberikan\s+gambaran)",
             r"(?:i\s+)?(?:can'?t|cannot|unable\s+to)\s+(?:directly|actually)?\s*(?:open|run|execute|access|browse)",
+            r"(?:i\s+)?(?:don'?t|do\s+not)\s+have\s+(?:access|ability|capability)",
+            r"(?:as\s+an?\s+)?(?:AI|language\s+model|virtual\s+assistant)",
         ]
         is_refusal = any(re.search(p, raw, re.IGNORECASE) for p in refusal_patterns)
 
@@ -779,9 +1112,41 @@ class AgentLoop:
                 logger.info(f"LLM refused but intent detected, forcing tool: {intent}")
                 return intent
 
+        if user_input and not is_refusal:
+            intent = detect_intent(user_input)
+            if intent:
+                logger.info(f"Fallback intent detection from user_input: {intent['type']}")
+                return intent
+
         return {"type": "respond", "message": raw}
 
-    async def _generate_final_response(self) -> str:
+    async def _generate_final_response(self, user_input: str = "") -> str:
+        self.state = AgentState.SYNTHESIZING
+        logger.info("Phase 4 - SYNTHESIS: Generating final comprehensive response...")
+
+        execution_summary = ""
+        for entry in self.execution_log:
+            phase = entry.get("phase", "unknown")
+            data = entry.get("data", {})
+            if phase == "plan_created":
+                execution_summary += f"Plan: {data.get('goal', '')}\n"
+                for i, step in enumerate(data.get('steps', []), 1):
+                    execution_summary += f"  Step {i}: {step}\n"
+            elif phase == "execute":
+                execution_summary += f"Executed {data.get('tool', '')}: {str(data.get('result', ''))[:300]}\n"
+            elif phase == "think":
+                execution_summary += f"Analysis: {data.get('thought', '')[:200]}\n"
+
+        if self.planner.tasks:
+            execution_summary += "\n" + self.planner.get_plan_summary()
+
+        if user_input and execution_summary:
+            prompt = SYNTHESIS_PROMPT.format(
+                user_input=user_input,
+                execution_summary=execution_summary,
+            )
+            return await self.llm.chat(prompt)
+
         context = self.context_manager.get_context_window()
         prompt = self._build_llm_prompt(context)
         prompt += "\n\n[System]: Berikan ringkasan akhir dari semua yang sudah dilakukan. Respons sebagai teks biasa, bukan JSON."
