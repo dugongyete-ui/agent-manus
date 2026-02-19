@@ -1004,9 +1004,10 @@ class AgentLoop:
 
         fixed = re.sub(r'//[^\n]*', '', fixed)
 
-        fixed = re.sub(r"(?<=[{,:\[]\s*)(\b(?:action|tool|params|type|command|query|url|path|operation|content|message|thought|goal|steps|name|action|prompt|width|height|format|selector|value|script|runtime|code|interval|framework|output_dir|cron_expression|callback|description|capabilities|old_text|new_text|dest|pattern|directory|start_line|end_line|direction|amount|full_page|dev|manager|packages|project_dir|slides|author|theme|layout|delay_seconds)\b)(?=\s*:)", r'"\1"', fixed)
+        known_keys = r'\b(?:action|tool|params|type|command|query|url|path|operation|content|message|thought|goal|steps|name|prompt|width|height|format|selector|value|script|runtime|code|interval|framework|output_dir|cron_expression|callback|description|capabilities|old_text|new_text|dest|pattern|directory|start_line|end_line|direction|amount|full_page|dev|manager|packages|project_dir|slides|author|theme|layout|delay_seconds)\b'
+        fixed = re.sub(r'([{,\[]\s*)(' + known_keys + r')(\s*:)', lambda m: m.group(1) + '"' + m.group(2) + '"' + m.group(3), fixed)
 
-        fixed = re.sub(r"(?<=:\s*)'([^']*)'", r'"\1"', fixed)
+        fixed = re.sub(r":\s*'([^']*)'", lambda m: ': "' + m.group(1) + '"', fixed)
 
         if fixed.startswith('{') and not fixed.endswith('}'):
             open_braces = fixed.count('{')
