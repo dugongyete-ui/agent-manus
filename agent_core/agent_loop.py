@@ -882,7 +882,7 @@ class AgentLoop:
         if action == "init":
             name = params.get("name", "my_project")
             framework = params.get("framework", "flask")
-            output_dir = params.get("output_dir", ".")
+            output_dir = params.get("output_dir", None)
             r = tool.init_project(name, framework, output_dir)
             return json.dumps(r, ensure_ascii=False)
         elif action == "install_deps":

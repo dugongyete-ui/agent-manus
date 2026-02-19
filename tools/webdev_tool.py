@@ -132,9 +132,22 @@ FRAMEWORK_TEMPLATES = {
 
 
 class WebDevTool:
+    WORKSPACE_DIR = "/home/runner/workspace/user_workspace"
+
     def __init__(self, default_port: int = 5000):
         self.default_port = default_port
         self.projects: list[dict] = []
+        os.makedirs(self.WORKSPACE_DIR, exist_ok=True)
+
+    def _get_db(self):
+        try:
+            import sys
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'web'))
+            from database import save_webdev_project, get_webdev_projects, get_webdev_project_by_name
+            return save_webdev_project, get_webdev_projects, get_webdev_project_by_name
+        except Exception as e:
+            logger.warning(f"Database not available for webdev: {e}")
+            return None, None, None
 
     async def execute(self, plan: dict) -> str:
         intent = plan.get("intent", "")
@@ -144,7 +157,7 @@ class WebDevTool:
             f"Gunakan init_project() untuk memulai proyek baru."
         )
 
-    def init_project(self, name: str, framework: str, output_dir: str = ".") -> dict:
+    def init_project(self, name: str, framework: str, output_dir: str = None) -> dict:
         if framework not in FRAMEWORK_TEMPLATES:
             return {
                 "success": False,
@@ -152,7 +165,8 @@ class WebDevTool:
             }
 
         template = FRAMEWORK_TEMPLATES[framework]
-        project_dir = os.path.join(output_dir, name)
+        base_dir = output_dir if output_dir and output_dir != "." else self.WORKSPACE_DIR
+        project_dir = os.path.join(base_dir, name)
         os.makedirs(project_dir, exist_ok=True)
 
         created_files = []
@@ -180,7 +194,25 @@ class WebDevTool:
             "build_command": template.get("build_command"),
         }
         self.projects.append(project_info)
-        logger.info(f"Proyek '{name}' diinisialisasi dengan {framework}")
+
+        save_fn, _, _ = self._get_db()
+        if save_fn:
+            try:
+                save_fn(
+                    name=name,
+                    framework=framework,
+                    directory=project_dir,
+                    manager=template.get("manager", "npm"),
+                    dev_command=template.get("dev_command"),
+                    build_command=template.get("build_command"),
+                    files=created_files,
+                    dependencies=template.get("dependencies", []),
+                )
+                logger.info(f"Project '{name}' saved to database")
+            except Exception as e:
+                logger.warning(f"Failed to save project to database: {e}")
+
+        logger.info(f"Proyek '{name}' diinisialisasi dengan {framework} di {project_dir}")
 
         return {"success": True, "project": project_info}
 

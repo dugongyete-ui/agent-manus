@@ -15,3 +15,4 @@ logs/*.log
 data/generated/
 .pytest_cache/
 .mypy_cache/
+user_workspace/

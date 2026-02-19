@@ -48,6 +48,23 @@ def init_database():
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS webdev_projects (
+            id SERIAL PRIMARY KEY,
+            name TEXT NOT NULL,
+            framework TEXT NOT NULL,
+            directory TEXT NOT NULL,
+            manager TEXT DEFAULT 'npm',
+            dev_command TEXT,
+            build_command TEXT,
+            files JSONB DEFAULT '[]',
+            dependencies JSONB DEFAULT '[]',
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_webdev_name ON webdev_projects(name)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tool_exec_session ON tool_executions(session_id)")
@@ -171,6 +188,65 @@ def log_tool_execution(session_id: str, tool_name: str, params: dict, result: st
     cur.close()
     conn.close()
     return row
+
+
+def save_webdev_project(name: str, framework: str, directory: str, manager: str = "npm",
+                        dev_command: str = None, build_command: str = None,
+                        files: list = None, dependencies: list = None) -> dict:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """INSERT INTO webdev_projects (name, framework, directory, manager, dev_command, build_command, files, dependencies)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (name, framework, directory, manager, dev_command, build_command,
+         json.dumps(files or []), json.dumps(dependencies or []))
+    )
+    project = dict(cur.fetchone())
+    conn.commit()
+    cur.close()
+    conn.close()
+    return project
+
+
+def get_webdev_projects() -> list:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM webdev_projects ORDER BY created_at DESC")
+    projects = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return projects
+
+
+def get_webdev_project(project_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM webdev_projects WHERE id = %s", (project_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def get_webdev_project_by_name(name: str) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM webdev_projects WHERE name = %s ORDER BY created_at DESC LIMIT 1", (name,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_webdev_project(project_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM webdev_projects WHERE id = %s", (project_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
 
 
 def get_tool_executions(session_id: str) -> list:
