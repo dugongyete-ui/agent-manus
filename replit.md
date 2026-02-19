@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Fase 15: Full Tool Test & MCP SSE Fix (Feb 19, 2026)
+- **MCP SSE Parser Fix**: Fixed `CustomProvider.complete()` and `stream()` to handle SSE responses where data chunks are JSON-quoted strings (`data: "text"`) instead of JSON objects
+- **Intent Detection Safety**: Added question-pattern bypass to prevent questions (apa/siapa/bagaimana/why/how/etc.) from triggering tool execution; added empty-param validation to skip invalid matches
+- **All 10 Tools Verified**: shell_tool, file_tool, search_tool, browser_tool, generate_tool, slides_tool, webdev_tool, schedule_tool, message_tool, skill_manager - all tested and working
+- **MCP Multi-Model Verified**: Successfully tested chat with claude40opusthinking_labs and gpt5_thinking models via dzeck provider; streaming also works
+
 ### Fase 14: Intent Bypass & Real Tool Execution (Feb 19, 2026)
 - **First-Iteration Intent Bypass**: Added `detect_intent()` bypass in both `api_chat` and `api_chat_stream` endpoints - tools execute IMMEDIATELY when intent is clear (e.g., "buka google.com" -> browser_tool runs without LLM), skipping unnecessary LLM round-trips
 - **Fallback Intent Detection Fix**: `_parse_llm_response()` now receives `user_input` parameter in server.py, enabling fallback intent detection when LLM returns plain text instead of JSON
