@@ -42,7 +42,7 @@ from web.database import (
     build_context_string, log_tool_execution, get_tool_executions
 )
 from agent_core.agent_loop import AgentLoop, SYSTEM_PROMPT
-from agent_core.llm_client import LLMClient
+from agent_core.llm_client import LLMClient, AVAILABLE_MODELS, MODEL_CATEGORIES
 from agent_core.knowledge_base import KnowledgeBase
 from agent_core.context_manager import ContextManager
 from agent_core.rlhf_engine import RLHFEngine
@@ -189,8 +189,13 @@ async def api_get_messages(session_id: str):
 async def api_chat(session_id: str, request: Request):
     body = await request.json()
     user_message = body.get("message", "").strip()
+    request_model = body.get("model", None)
     if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
+
+    agent = get_agent()
+    if request_model:
+        agent.llm.set_model(request_model)
 
     session = get_session(session_id)
     if not session:
@@ -312,8 +317,13 @@ async def api_chat(session_id: str, request: Request):
 async def api_chat_stream(session_id: str, request: Request):
     body = await request.json()
     user_message = body.get("message", "").strip()
+    request_model = body.get("model", None)
     if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
+
+    agent_ref = get_agent()
+    if request_model:
+        agent_ref.llm.set_model(request_model)
 
     session = get_session(session_id)
     if not session:
@@ -486,6 +496,47 @@ async def api_agent_status():
 async def api_agent_tools():
     agent = get_agent()
     return {"tools": [{"name": n, "type": type(t).__name__} for n, t in agent._tool_instances.items()]}
+
+
+@app.get("/api/models")
+async def api_list_models(category: str = None):
+    agent = get_agent()
+    models = agent.llm.list_models(category)
+    current = agent.llm.get_current_model()
+    return {
+        "models": models,
+        "current": current,
+        "categories": MODEL_CATEGORIES,
+    }
+
+
+@app.post("/api/models/switch")
+async def api_switch_model(request: Request):
+    body = await request.json()
+    model_id = body.get("model", "")
+    if not model_id:
+        raise HTTPException(status_code=400, detail="Model ID is required")
+    agent = get_agent()
+    success = agent.llm.set_model(model_id)
+    if not success:
+        available = list(AVAILABLE_MODELS.keys())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Model '{model_id}' tidak tersedia. Model yang tersedia: {', '.join(available)}",
+        )
+    return {
+        "ok": True,
+        "current": agent.llm.get_current_model(),
+    }
+
+
+@app.get("/api/models/stats")
+async def api_model_stats():
+    agent = get_agent()
+    return {
+        "current_model": agent.llm.get_current_model(),
+        "retry_stats": agent.llm.get_retry_stats(),
+    }
 
 
 @app.get("/api/files")
