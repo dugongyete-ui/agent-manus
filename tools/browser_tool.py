@@ -62,10 +62,21 @@ class BrowserTool:
             self._setup_library_paths()
             from playwright.async_api import async_playwright
             self._playwright = await async_playwright().start()
-            self._browser = await self._playwright.chromium.launch(
-                headless=self.headless,
-                args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
-            )
+
+            import shutil
+            system_chromium = shutil.which("chromium") or shutil.which("chromium-browser")
+            launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+            if system_chromium:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=self.headless,
+                    executable_path=system_chromium,
+                    args=launch_args,
+                )
+            else:
+                self._browser = await self._playwright.chromium.launch(
+                    headless=self.headless,
+                    args=launch_args,
+                )
             self._context = await self._browser.new_context(
                 viewport={"width": self.viewport_width, "height": self.viewport_height},
                 user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 ManusAgent/1.0",
