@@ -10,6 +10,12 @@ Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
 
+### Fase 14: Intent Bypass & Real Tool Execution (Feb 19, 2026)
+- **First-Iteration Intent Bypass**: Added `detect_intent()` bypass in both `api_chat` and `api_chat_stream` endpoints - tools execute IMMEDIATELY when intent is clear (e.g., "buka google.com" -> browser_tool runs without LLM), skipping unnecessary LLM round-trips
+- **Fallback Intent Detection Fix**: `_parse_llm_response()` now receives `user_input` parameter in server.py, enabling fallback intent detection when LLM returns plain text instead of JSON
+- **System Prompt v2**: Complete rewrite with explicit examples, mandatory mapping rules, and stronger enforcement of JSON-only output format
+- **Setup Script v2**: Optimized `setup.sh` with parallel pip install, auto-detect missing modules, MCP module verification, and server startup test
+
 ### Fase 13: Autonomous Tool Execution Fix (Feb 19, 2026)
 - **System Prompt Overhaul**: Rewrote agent system prompt to enforce JSON-only tool call responses; prevents LLM from responding "I can't run tools"
 - **Robust JSON Parser**: Enhanced `_parse_llm_response()` to handle JSON in markdown code blocks, embedded in text, and fallback text-based tool detection
