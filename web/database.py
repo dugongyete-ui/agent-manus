@@ -4,6 +4,7 @@ import psycopg2.extras
 import time
 import json
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,8 @@ def create_session(session_id: str, title: str = "New Chat") -> dict:
         "INSERT INTO sessions (id, title) VALUES (%s, %s) RETURNING *",
         (session_id, title)
     )
-    session = dict(cur.fetchone())
+    row = cur.fetchone()
+    session = dict(row) if row else {}
     conn.commit()
     cur.close()
     conn.close()
@@ -138,7 +140,8 @@ def add_message(session_id: str, role: str, content: str, metadata: dict | None 
         "INSERT INTO messages (session_id, role, content, metadata) VALUES (%s, %s, %s, %s) RETURNING *",
         (session_id, role, content, json.dumps(metadata or {}))
     )
-    msg = dict(cur.fetchone())
+    row = cur.fetchone()
+    msg = dict(row) if row else {}
     cur.execute("UPDATE sessions SET updated_at = NOW() WHERE id = %s", (session_id,))
     conn.commit()
     cur.close()
@@ -183,7 +186,8 @@ def log_tool_execution(session_id: str, tool_name: str, params: dict, result: st
         "INSERT INTO tool_executions (session_id, message_id, tool_name, params, result, status, duration_ms) VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING *",
         (session_id, message_id, tool_name, json.dumps(params), result[:5000], status, duration_ms)
     )
-    row = dict(cur.fetchone())
+    fetched = cur.fetchone()
+    row = dict(fetched) if fetched else {}
     conn.commit()
     cur.close()
     conn.close()
@@ -191,8 +195,8 @@ def log_tool_execution(session_id: str, tool_name: str, params: dict, result: st
 
 
 def save_webdev_project(name: str, framework: str, directory: str, manager: str = "npm",
-                        dev_command: str = None, build_command: str = None,
-                        files: list = None, dependencies: list = None) -> dict:
+                        dev_command: Optional[str] = None, build_command: Optional[str] = None,
+                        files: Optional[list] = None, dependencies: Optional[list] = None) -> dict:
     conn = get_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
@@ -201,7 +205,8 @@ def save_webdev_project(name: str, framework: str, directory: str, manager: str 
         (name, framework, directory, manager, dev_command, build_command,
          json.dumps(files or []), json.dumps(dependencies or []))
     )
-    project = dict(cur.fetchone())
+    row = cur.fetchone()
+    project = dict(row) if row else {}
     conn.commit()
     cur.close()
     conn.close()

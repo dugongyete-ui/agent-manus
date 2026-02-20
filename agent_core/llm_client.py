@@ -357,7 +357,7 @@ class LLMClient:
                     retry_after = resp.headers.get("Retry-After")
                     if retry_after:
                         try:
-                            delay = float(retry_after)
+                            delay = min(float(retry_after), RETRY_CONFIG["max_delay"])
                         except ValueError:
                             delay = self._calculate_retry_delay(attempt)
                     else:
@@ -392,6 +392,34 @@ class LLMClient:
         if last_exception:
             raise last_exception
         raise aiohttp.ClientError("Max retries exceeded")
+
+    async def _try_fallback_models(self, session: aiohttp.ClientSession, payload: dict) -> Optional[aiohttp.ClientResponse]:
+        original_model = self.model
+        fallback_models = [
+            model_id for model_id in AVAILABLE_MODELS
+            if model_id != original_model
+            and AVAILABLE_MODELS[model_id].get("category") == AVAILABLE_MODELS.get(original_model, {}).get("category", "general")
+        ]
+        if not fallback_models:
+            fallback_models = [m for m in AVAILABLE_MODELS if m != original_model]
+
+        for fallback_model in fallback_models[:3]:
+            try:
+                logger.info(f"Trying fallback model: {fallback_model}")
+                fallback_payload = {**payload, "model": fallback_model}
+                resp = await session.post(
+                    self.stream_url,
+                    json=fallback_payload,
+                    headers={"Content-Type": "application/json"},
+                )
+                if resp.status == 200:
+                    logger.info(f"Fallback model {fallback_model} succeeded")
+                    return resp
+                await resp.release()
+            except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+                logger.warning(f"Fallback model {fallback_model} failed: {e}")
+                continue
+        return None
 
     async def chat(self, text: str) -> str:
         full_response = []

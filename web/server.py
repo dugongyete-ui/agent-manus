@@ -1,10 +1,12 @@
 import asyncio
+from contextlib import asynccontextmanager
 import json
 import logging
 import os
 import subprocess
 import sys
 import time
+from typing import Optional
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -72,7 +74,16 @@ from monitoring.monitor import monitor as system_monitor
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Manus Agent", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app):
+    init_database()
+    get_agent()
+    system_monitor.health.register_check("database", lambda: init_database() or "OK", critical=True)
+    system_monitor.health.register_check("agent", lambda: "OK" if agent_loop else "not initialized")
+    logger.info("Manus Agent Web Server started")
+    yield
+
+app = FastAPI(title="Manus Agent", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -136,15 +147,6 @@ def get_agent():
 
 vm_manager = VMManager()
 shell_session_manager = ShellSessionManager()
-
-
-@app.on_event("startup")
-async def startup():
-    init_database()
-    get_agent()
-    system_monitor.health.register_check("database", lambda: init_database() or "OK", critical=True)
-    system_monitor.health.register_check("agent", lambda: "OK" if agent_loop else "not initialized")
-    logger.info("Manus Agent Web Server started")
 
 
 @app.get("/api/health")
@@ -314,6 +316,7 @@ async def api_chat(session_id: str, request: Request):
 
         max_iterations = agent.max_iterations
         final_response = ""
+        raw_response = ""
 
         intent_bypass = detect_intent(user_message)
         if intent_bypass:
@@ -863,7 +866,7 @@ async def api_agent_tools():
 
 
 @app.get("/api/models")
-async def api_list_models(category: str = None):
+async def api_list_models(category: Optional[str] = None):
     agent = get_agent()
     models = agent.llm.list_models(category)
     current = agent.llm.get_current_model()
@@ -904,7 +907,7 @@ async def api_model_stats():
 
 
 @app.get("/api/files")
-async def api_list_files(path: str = "."):
+async def api_list_files_path(path: str = "."):
     file_tool = FileTool()
     try:
         entries = file_tool.list_directory(path)
@@ -1170,7 +1173,7 @@ async def api_security_audit():
 
 
 @app.get("/api/security/events")
-async def api_security_events(limit: int = 50, level: str = None):
+async def api_security_events(limit: int = 50, level: Optional[str] = None):
     try:
         return {"events": security_manager.get_recent_events(limit=limit, threat_level=level)}
     except Exception as e:
@@ -1452,7 +1455,7 @@ async def api_mcp_stream(request: Request):
 
 
 @app.get("/api/vm/list")
-async def api_vm_list(state: str = None):
+async def api_vm_list(state: Optional[str] = None):
     return {"vms": vm_manager.list_vms(state_filter=state)}
 
 
@@ -1536,7 +1539,7 @@ async def api_vm_restore(vm_id: str, snapshot_id: str):
 
 
 @app.get("/api/vm/{vm_id}/logs")
-async def api_vm_logs(vm_id: str, limit: int = 50, level: str = None):
+async def api_vm_logs(vm_id: str, limit: int = 50, level: Optional[str] = None):
     return vm_manager.get_vm_logs(vm_id, limit, level)
 
 
@@ -1679,7 +1682,7 @@ async def api_spreadsheet_filter(request: Request):
 
 
 @app.get("/api/playbook/list")
-async def api_playbook_list(category: str = None):
+async def api_playbook_list(category: Optional[str] = None):
     try:
         agent = get_agent()
         tool = agent._tool_instances.get("playbook_manager")
@@ -1782,7 +1785,7 @@ async def api_monitor_health():
 
 
 @app.get("/api/monitor/performance")
-async def api_monitor_performance(operation: str = None):
+async def api_monitor_performance(operation: Optional[str] = None):
     return system_monitor.performance.get_stats(operation)
 
 

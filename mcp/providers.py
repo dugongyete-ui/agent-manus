@@ -6,7 +6,7 @@ import logging
 import random
 import time
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional, Union
 
 import aiohttp
 
@@ -37,11 +37,10 @@ class MCPProvider(ABC):
         pass
 
     @abstractmethod
-    async def stream(self, request: MCPRequest) -> AsyncIterator[MCPStreamChunk]:
-        pass
+    def stream(self, request: MCPRequest) -> AsyncIterator[MCPStreamChunk]: ...
 
     @abstractmethod
-    def format_messages(self, messages: list[MCPMessage]) -> list[dict]:
+    def format_messages(self, messages: list[MCPMessage]) -> Union[list[dict], tuple[list[dict], str]]:
         pass
 
     @abstractmethod
@@ -157,7 +156,7 @@ class OpenAIProvider(MCPProvider):
     def format_messages(self, messages: list[MCPMessage]) -> list[dict]:
         formatted = []
         for msg in messages:
-            m = {"role": msg.role.value, "content": msg.content}
+            m: dict[str, Any] = {"role": msg.role.value, "content": msg.content}
             if msg.tool_calls:
                 m["tool_calls"] = [
                     {"id": tc.id, "type": "function", "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)}}
@@ -286,14 +285,14 @@ class OpenAIProvider(MCPProvider):
 
 
 class AnthropicProvider(MCPProvider):
-    def format_messages(self, messages: list[MCPMessage]) -> list[dict]:
+    def format_messages(self, messages: list[MCPMessage]) -> tuple[list[dict], str]:
         formatted = []
         system_parts = []
         for msg in messages:
             if msg.role == MCPRole.SYSTEM:
                 system_parts.append(msg.content)
                 continue
-            m = {"role": msg.role.value, "content": msg.content}
+            m: dict[str, Any] = {"role": msg.role.value, "content": msg.content}
             if msg.tool_calls:
                 content_blocks = []
                 if msg.content:
@@ -436,7 +435,7 @@ class AnthropicProvider(MCPProvider):
 
 
 class GoogleProvider(MCPProvider):
-    def format_messages(self, messages: list[MCPMessage]) -> list[dict]:
+    def format_messages(self, messages: list[MCPMessage]) -> tuple[list[dict], str]:
         formatted = []
         system_instruction = ""
         for msg in messages:
@@ -444,7 +443,7 @@ class GoogleProvider(MCPProvider):
                 system_instruction += msg.content + "\n"
                 continue
             role = "user" if msg.role == MCPRole.USER else "model"
-            parts = [{"text": msg.content}] if msg.content else []
+            parts: list[dict[str, Any]] = [{"text": msg.content}] if msg.content else []
             if msg.tool_calls:
                 for tc in msg.tool_calls:
                     parts.append({"functionCall": {"name": tc.name, "args": tc.arguments}})
