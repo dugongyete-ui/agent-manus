@@ -444,7 +444,7 @@ async function sendStreamingMessage(message) {
         if (streamBubbleCreated && streamContent) {
             finalizeStreamingBubble(streamContent);
         } else if (!streamBubbleCreated) {
-            appendMessage('assistant', 'Response ended unexpectedly. Please try again.');
+            appendMessage('assistant', 'Koneksi terputus sebelum selesai. Silakan coba lagi.');
         }
         await loadSessions();
     }

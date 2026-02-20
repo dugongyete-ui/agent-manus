@@ -119,6 +119,8 @@ User says "call API/request API/fetch" -> {"action":"use_tool","tool":"api_tool"
 User says "analyze spreadsheet/CSV/Excel" -> {"action":"use_tool","tool":"spreadsheet_tool","params":{"action":"read","file_path":"[path]"}}
 User asks a general knowledge question -> {"action":"respond","message":"[answer]"}
 User request is unclear or ambiguous -> {"action":"respond","message":"Could you clarify what you'd like me to do? For example: [suggestions]"}
+User uploads a file -> Check the uploaded file content in data/uploads/ using file_tool, then process accordingly
+User says "analyze/process this file" with [File terlampir: X] -> {"action":"use_tool","tool":"file_tool","params":{"operation":"analyze","path":"data/uploads/[filename]"}}
 
 === WORKFLOW FOR COMPLEX TASKS ===
 1. First output: {"action":"plan",...} with clear steps
