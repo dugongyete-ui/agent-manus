@@ -117,6 +117,11 @@ Protocol server for standardized communication with external model providers.
 - 2026-02-20: Fixed spreadsheet_tool and playbook_manager integration in agent loop
 - 2026-02-20: Mounted data/generated as static directory for file preview
 - 2026-02-20: All 12 tools verified working end-to-end with real execution
+- 2026-02-20: Fixed critical bug: Retry-After delay capped at 30s max (was 86400s/24hr)
+- 2026-02-20: Added automatic fallback mechanism - rotates through alternate AI models when provider fails
+- 2026-02-20: Fixed all 31 LSP diagnostics across 5 files (server, providers, registry, database)
+- 2026-02-20: Replaced deprecated FastAPI on_event with modern lifespan context manager
+- 2026-02-20: Fixed type annotations, None handling, and duplicate function definitions
 - 2026-02-19: Fixed chat sending bug - messages no longer get stuck on send (mobile & desktop)
 - 2026-02-19: Added 3-minute timeout protection for stuck streaming requests
 - 2026-02-19: Improved streaming endpoint with guaranteed done/error events and try/catch per tool
