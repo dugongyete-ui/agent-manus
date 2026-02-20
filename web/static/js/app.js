@@ -7,6 +7,8 @@ let allModels = [];
 let activeCategory = null;
 let stepTracker = null;
 let activeToolCards = {};
+let pendingUploads = [];
+let uploadedFileIds = [];
 
 const TOOL_CONFIG = {
     shell_tool: {
@@ -233,7 +235,18 @@ async function sendMessage() {
         const welcomeEl = document.getElementById('welcomeScreen');
         if (welcomeEl) welcomeEl.remove();
 
-        appendMessage('user', message);
+        const uploadContext = getUploadContext();
+        const fullMessage = message + uploadContext;
+
+        if (pendingUploads.length > 0) {
+            const fileNames = pendingUploads.filter(u => u.status === 'done').map(u => u.file.name);
+            const attachHtml = fileNames.map(n => `<div class="file-attachment-msg"><i class="ri-attachment-2"></i>${escapeHtml(n)}</div>`).join('');
+            appendMessage('user', attachHtml + '\n' + message);
+        } else {
+            appendMessage('user', message);
+        }
+
+        clearUploads();
         input.value = '';
         input.style.height = 'auto';
         input.blur();
@@ -257,7 +270,7 @@ async function sendMessage() {
         }, 180000);
 
         try {
-            await sendStreamingMessage(message);
+            await sendStreamingMessage(fullMessage);
         } catch (err) {
             if (err.name === 'AbortError') {
                 console.log('Stream aborted');
@@ -1609,4 +1622,147 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSessions();
     loadModels();
     document.getElementById('messageInput').focus();
+    initDragDrop();
 });
+
+function initDragDrop() {
+    const chatPanel = document.getElementById('chatPanel');
+    const overlay = document.getElementById('dropOverlay');
+    if (!chatPanel || !overlay) return;
+
+    let dragCounter = 0;
+
+    chatPanel.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        dragCounter++;
+        overlay.classList.add('active');
+    });
+
+    chatPanel.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        dragCounter--;
+        if (dragCounter <= 0) {
+            dragCounter = 0;
+            overlay.classList.remove('active');
+        }
+    });
+
+    chatPanel.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+
+    chatPanel.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dragCounter = 0;
+        overlay.classList.remove('active');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) handleFiles(Array.from(files));
+    });
+}
+
+function handleFileSelect(event) {
+    const files = Array.from(event.target.files);
+    if (files.length > 0) handleFiles(files);
+    event.target.value = '';
+}
+
+function handleFiles(files) {
+    files.forEach(file => {
+        if (file.size > 50 * 1024 * 1024) {
+            appendMessage('assistant', `File "${file.name}" terlalu besar (max 50MB).`);
+            return;
+        }
+        const id = Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        pendingUploads.push({ id, file, status: 'pending', fileId: null });
+        renderUploadPreviews();
+        uploadFile(id, file);
+    });
+}
+
+function renderUploadPreviews() {
+    const bar = document.getElementById('uploadPreviewBar');
+    const list = document.getElementById('uploadPreviewList');
+    if (!bar || !list) return;
+
+    if (pendingUploads.length === 0) {
+        bar.style.display = 'none';
+        list.innerHTML = '';
+        return;
+    }
+    bar.style.display = 'flex';
+
+    const fileIcons = {
+        pdf: 'ri-file-pdf-line', doc: 'ri-file-word-line', docx: 'ri-file-word-line',
+        xls: 'ri-file-excel-line', xlsx: 'ri-file-excel-line', csv: 'ri-file-excel-line',
+        png: 'ri-image-line', jpg: 'ri-image-line', jpeg: 'ri-image-line', gif: 'ri-image-line',
+        mp4: 'ri-video-line', mp3: 'ri-music-line', zip: 'ri-folder-zip-line',
+        py: 'ri-code-line', js: 'ri-code-line', ts: 'ri-code-line',
+        html: 'ri-html5-line', css: 'ri-css3-line', json: 'ri-braces-line',
+        txt: 'ri-file-text-line', md: 'ri-markdown-line',
+    };
+
+    list.innerHTML = pendingUploads.map(u => {
+        const ext = u.file.name.split('.').pop().toLowerCase();
+        const icon = fileIcons[ext] || 'ri-file-line';
+        const isUploading = u.status === 'uploading';
+        return `<div class="upload-preview-item ${isUploading ? 'uploading' : ''}" data-id="${u.id}">
+            ${isUploading ? '<div class="upload-spinner"></div>' : `<i class="${icon}"></i>`}
+            <span class="upload-name" title="${escapeHtml(u.file.name)}">${escapeHtml(u.file.name)}</span>
+            <button class="upload-remove" onclick="removeUpload('${u.id}')" title="Hapus">
+                <i class="ri-close-line"></i>
+            </button>
+        </div>`;
+    }).join('');
+}
+
+async function uploadFile(id, file) {
+    const upload = pendingUploads.find(u => u.id === id);
+    if (!upload) return;
+    upload.status = 'uploading';
+    renderUploadPreviews();
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        if (currentSessionId) formData.append('session_id', currentSessionId);
+
+        const res = await fetch(`${API}/api/upload`, { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
+
+        const data = await res.json();
+        upload.status = 'done';
+        upload.fileId = data.file?.id;
+        if (upload.fileId) uploadedFileIds.push(upload.fileId);
+        renderUploadPreviews();
+    } catch (err) {
+        console.error('Upload error:', err);
+        upload.status = 'error';
+        renderUploadPreviews();
+        appendMessage('assistant', `Gagal upload "${file.name}": ${err.message}`);
+    }
+}
+
+function removeUpload(id) {
+    const idx = pendingUploads.findIndex(u => u.id === id);
+    if (idx !== -1) {
+        const upload = pendingUploads[idx];
+        if (upload.fileId) {
+            uploadedFileIds = uploadedFileIds.filter(fid => fid !== upload.fileId);
+        }
+        pendingUploads.splice(idx, 1);
+        renderUploadPreviews();
+    }
+}
+
+function getUploadContext() {
+    const done = pendingUploads.filter(u => u.status === 'done');
+    if (done.length === 0) return '';
+    const names = done.map(u => u.file.name).join(', ');
+    return `\n[File terlampir: ${names}]`;
+}
+
+function clearUploads() {
+    pendingUploads = [];
+    uploadedFileIds = [];
+    renderUploadPreviews();
+}

@@ -64,6 +64,7 @@
                     <div class="messages-container" id="messagesContainer">
                         <div class="welcome-screen" id="welcomeScreen">
                             <h2>Apa yang bisa saya bantu?</h2>
+                            <p class="welcome-subtitle">Manus Agent siap membantu dengan 14 tool canggih</p>
                             <div class="welcome-tools">
                                 <div class="welcome-tool-card" onclick="document.getElementById('messageInput').value='Cari informasi terbaru tentang ';document.getElementById('messageInput').focus()">
                                     <i class="ri-search-line"></i>
@@ -89,16 +90,45 @@
                                     <i class="ri-slideshow-line"></i>
                                     <span>Slides</span>
                                 </div>
+                                <div class="welcome-tool-card" onclick="document.getElementById('messageInput').value='Buat spreadsheet data ';document.getElementById('messageInput').focus()">
+                                    <i class="ri-file-excel-line"></i>
+                                    <span>Spreadsheet</span>
+                                </div>
+                                <div class="welcome-tool-card" onclick="document.getElementById('messageInput').value='Query database ';document.getElementById('messageInput').focus()">
+                                    <i class="ri-database-2-line"></i>
+                                    <span>Database</span>
+                                </div>
+                                <div class="welcome-tool-card" onclick="document.getElementById('messageInput').value='Panggil API ';document.getElementById('messageInput').focus()">
+                                    <i class="ri-link-m"></i>
+                                    <span>API</span>
+                                </div>
+                                <div class="welcome-tool-card" onclick="document.getElementById('fileInput').click()">
+                                    <i class="ri-upload-cloud-line"></i>
+                                    <span>Upload File</span>
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="input-area">
+                        <div class="upload-preview-bar" id="uploadPreviewBar" style="display:none">
+                            <div class="upload-preview-list" id="uploadPreviewList"></div>
+                        </div>
                         <div class="input-wrapper">
+                            <button class="btn-attach" id="attachBtn" onclick="document.getElementById('fileInput').click()" title="Upload file">
+                                <i class="ri-attachment-2"></i>
+                            </button>
                             <textarea id="messageInput" placeholder="Tetapkan tugas atau tanyakan apa saja" rows="1" onkeydown="handleKeyDown(event)" oninput="handleInput(event)" enterkeyhint="send"></textarea>
                             <button class="btn-send" id="sendBtn" onclick="sendMessage()">
                                 <i class="ri-arrow-up-line"></i>
                             </button>
+                        </div>
+                        <input type="file" id="fileInput" multiple accept="*/*" style="display:none" onchange="handleFileSelect(event)">
+                    </div>
+                    <div class="drop-overlay" id="dropOverlay">
+                        <div class="drop-overlay-content">
+                            <i class="ri-upload-cloud-2-line"></i>
+                            <span>Drop file di sini</span>
                         </div>
                     </div>
                 </div>
