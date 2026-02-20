@@ -110,7 +110,19 @@ Protocol server for standardized communication with external model providers.
 ### Testing
 - `POST /api/tests/run` - Run full test suite
 
+### File Upload
+- `POST /api/upload` - Upload file with text extraction (PDF, text files)
+- `GET /api/uploads` - List uploaded files
+- `GET /api/uploads/{id}` - Get upload details
+- `DELETE /api/uploads/{id}` - Delete uploaded file
+- `GET /api/uploads/{id}/content` - Get extracted content
+
 ## Recent Changes
+- 2026-02-20: Added frontend file upload UI with drag-and-drop, attachment button, and upload preview bar
+- 2026-02-20: Added 4 new tool cards to welcome screen (Spreadsheet, Database, API, Upload File)
+- 2026-02-20: Added missing TOOL_CONFIG entries for database_tool, api_tool, spreadsheet_tool, playbook_manager
+- 2026-02-20: Updated system prompt with file upload handling instructions
+- 2026-02-20: Improved streaming error messages (Indonesian localization)
 - 2026-02-20: Added file download API endpoints (single file, ZIP bundle, file listing)
 - 2026-02-20: Added real PDF generation using fpdf2 with styled formatting
 - 2026-02-20: Frontend now shows download buttons in tool result cards
