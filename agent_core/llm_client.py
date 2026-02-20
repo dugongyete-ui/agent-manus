@@ -219,6 +219,7 @@ class LLMClient:
         }
         self._mcp_client: Optional[MCPClient] = None
         self._mcp_enabled = False
+        self._last_fallback_model: Optional[str] = None
         self._init_mcp()
 
     def _init_mcp(self):
@@ -413,12 +414,14 @@ class LLMClient:
                     headers={"Content-Type": "application/json"},
                 )
                 if resp.status == 200:
-                    logger.info(f"Fallback model {fallback_model} succeeded")
+                    logger.info(f"Fallback model {fallback_model} succeeded (replacing primary model {original_model})")
+                    self._last_fallback_model = fallback_model
                     return resp
                 await resp.release()
             except (aiohttp.ClientError, asyncio.TimeoutError) as e:
                 logger.warning(f"Fallback model {fallback_model} failed: {e}")
                 continue
+        self._last_fallback_model = None
         return None
 
     async def chat(self, text: str) -> str:
@@ -426,6 +429,41 @@ class LLMClient:
         async for chunk in self.chat_stream(text):
             full_response.append(chunk)
         return "".join(full_response)
+
+    async def _read_stream_line(self, content: aiohttp.StreamReader, chunk_timeout: float = 30.0) -> Optional[bytes]:
+        try:
+            line = await asyncio.wait_for(content.readline(), timeout=chunk_timeout)
+            if not line:
+                return None
+            return line
+        except asyncio.TimeoutError:
+            raise asyncio.TimeoutError(f"No data received for {chunk_timeout}s")
+
+    def _parse_and_yield_line(self, decoded: str) -> Optional[str]:
+        if not decoded or not decoded.startswith("data: "):
+            return None
+        data_part = decoded[6:]
+        if data_part == "[DONE]":
+            return None
+        try:
+            parsed = json.loads(data_part)
+            validated = validate_json_response(parsed)
+            if validated["valid"]:
+                if validated["type"] == "text" or isinstance(validated["data"], str):
+                    return sanitize_response(str(validated["data"]))
+                elif isinstance(validated["data"], dict):
+                    content = validated["data"].get("content") or validated["data"].get("text") or validated["data"].get("message")
+                    if content:
+                        return sanitize_response(str(content))
+                    else:
+                        return sanitize_response(json.dumps(validated["data"], ensure_ascii=False))
+                else:
+                    return sanitize_response(str(validated["data"]))
+            else:
+                logger.warning(f"Invalid response data: {validated.get('error')}")
+                return None
+        except json.JSONDecodeError:
+            return sanitize_response(data_part)
 
     async def chat_stream(self, text: str) -> AsyncIterator[str]:
         session = await self._get_session()
@@ -435,57 +473,77 @@ class LLMClient:
             "provider": self.provider,
             "model": self.model,
         }
+        self._last_fallback_model = None
+        chunk_timeout = 30.0
 
         logger.debug(f"LLM request ke {self.stream_url} [model={self.model}]: {text[:100]}...")
 
+        resp = None
         try:
             resp = await self._request_with_retry(session, payload)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.warning(f"Primary model {self.model} failed: {e}, trying fallbacks...")
+            resp = await self._try_fallback_models(session, payload)
+            if resp is None:
+                yield f"[Error: All models failed. Last error: {e}]"
+                return
+            if self._last_fallback_model:
+                logger.info(f"Recovered using fallback model: {self._last_fallback_model}")
 
+        active_model = self._last_fallback_model or self.model
+        try:
             if resp.status != 200:
                 error_text = await resp.text()
-                logger.error(f"API error {resp.status}: {error_text[:200]}")
+                logger.warning(f"API error {resp.status}, trying fallback models...")
                 model_key = self.model
                 self._retry_stats["model_errors"][model_key] = (
                     self._retry_stats["model_errors"].get(model_key, 0) + 1
                 )
-                yield f"[Error API: {resp.status}]"
-                return
+                fallback_resp = await self._try_fallback_models(session, payload)
+                if fallback_resp and fallback_resp.status == 200:
+                    resp = fallback_resp
+                    if self._last_fallback_model:
+                        active_model = self._last_fallback_model
+                        logger.info(f"Recovered from HTTP error using fallback model: {self._last_fallback_model}")
+                else:
+                    yield f"[Error API: {resp.status}]"
+                    return
 
-            async for line in resp.content:
+            active_model = self._last_fallback_model or self.model
+            if self._last_fallback_model:
+                logger.info(f"Streaming response from fallback model: {self._last_fallback_model}")
+
+            while True:
+                line = await self._read_stream_line(resp.content, chunk_timeout)
+                if line is None:
+                    break
                 decoded = line.decode("utf-8", errors="replace").strip()
                 if not decoded:
                     continue
-
                 if decoded.startswith("data: "):
                     data_part = decoded[6:]
-
                     if data_part == "[DONE]":
                         break
-
-                    try:
-                        parsed = json.loads(data_part)
-                        validated = validate_json_response(parsed)
-                        if validated["valid"]:
-                            if validated["type"] == "text" or isinstance(validated["data"], str):
-                                sanitized = sanitize_response(str(validated["data"]))
-                                yield sanitized
-                            elif isinstance(validated["data"], dict):
-                                content = validated["data"].get("content") or validated["data"].get("text") or validated["data"].get("message")
-                                if content:
-                                    yield sanitize_response(str(content))
-                                else:
-                                    yield sanitize_response(json.dumps(validated["data"], ensure_ascii=False))
-                            else:
-                                yield sanitize_response(str(validated["data"]))
-                        else:
-                            logger.warning(f"Invalid response data: {validated.get('error')}")
-                    except json.JSONDecodeError:
-                        sanitized = sanitize_response(data_part)
-                        yield sanitized
-
-        except asyncio.TimeoutError:
-            logger.error("LLM request timeout")
-            yield "[Error: Request timeout]"
+                    result = self._parse_and_yield_line(decoded)
+                    if result is not None:
+                        yield result
+        except asyncio.TimeoutError as te:
+            logger.error(f"LLM streaming timeout (model: {active_model}): {te}, trying fallback...")
+            fallback_resp = await self._try_fallback_models(session, payload)
+            if fallback_resp and fallback_resp.status == 200:
+                if self._last_fallback_model:
+                    logger.info(f"Recovered from streaming timeout using fallback model: {self._last_fallback_model}")
+                async for line in fallback_resp.content:
+                    decoded = line.decode("utf-8", errors="replace").strip()
+                    if decoded.startswith("data: "):
+                        data_part = decoded[6:]
+                        if data_part == "[DONE]":
+                            break
+                        result = self._parse_and_yield_line(decoded)
+                        if result is not None:
+                            yield result
+            else:
+                yield "[Error: Request timeout - all fallback models also failed]"
         except aiohttp.ClientError as e:
             logger.error(f"LLM connection error: {e}")
             yield f"[Error koneksi: {e}]"

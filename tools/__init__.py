@@ -10,6 +10,10 @@ from tools.webdev_tool import WebDevTool
 from tools.schedule_tool import ScheduleTool
 from tools.message_tool import MessageTool
 from tools.skill_manager import SkillManager
+from tools.spreadsheet_tool import SpreadsheetTool
+from tools.playbook_manager import PlaybookManager
+from tools.database_tool import DatabaseTool
+from tools.api_tool import ApiTool
 
 __all__ = [
     "ShellTool",
@@ -22,4 +26,8 @@ __all__ = [
     "ScheduleTool",
     "MessageTool",
     "SkillManager",
+    "SpreadsheetTool",
+    "PlaybookManager",
+    "DatabaseTool",
+    "ApiTool",
 ]

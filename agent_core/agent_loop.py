@@ -99,6 +99,14 @@ Example:
    params: {"content":"...","type":"info|warning|success|error"}
 10. skill_manager - Manage extensible skills
     params: {"action":"list|info|create|run_script|search","name":"..."}
+11. spreadsheet_tool - Process CSV/Excel data
+    params: {"action":"create|read|filter|stats|sort|pivot|search|merge|formula","file_path":"...","name":"..."}
+12. playbook_manager - Manage reusable tool sequences
+    params: {"action":"list|create|execute|delete","name":"...","steps":[...]}
+13. database_tool - Query PostgreSQL databases
+    params: {"action":"query|list_tables|describe|stats|export_csv","sql":"...","table":"..."}
+14. api_tool - Call external REST APIs
+    params: {"action":"request","method":"GET|POST|PUT|DELETE","url":"...","headers":{},"body":{}}
 
 === MANDATORY MAPPING ===
 User says "open/buka/navigate [URL]" -> {"action":"use_tool","tool":"browser_tool","params":{"action":"navigate","url":"[URL]"}}
@@ -106,6 +114,9 @@ User says "search/cari [query]" -> {"action":"use_tool","tool":"search_tool","pa
 User says "run/jalankan [command]" -> {"action":"use_tool","tool":"shell_tool","params":{"command":"[command]"}}
 User says "create/read/write/edit file" -> {"action":"use_tool","tool":"file_tool","params":{...}}
 User says "generate/buat image/gambar" -> {"action":"use_tool","tool":"generate_tool","params":{...}}
+User says "query/query database/database" -> {"action":"use_tool","tool":"database_tool","params":{"action":"list_tables"}}
+User says "call API/request API/fetch" -> {"action":"use_tool","tool":"api_tool","params":{"action":"request","method":"GET","url":"[URL]"}}
+User says "analyze spreadsheet/CSV/Excel" -> {"action":"use_tool","tool":"spreadsheet_tool","params":{"action":"read","file_path":"[path]"}}
 User asks a general knowledge question -> {"action":"respond","message":"[answer]"}
 User request is unclear or ambiguous -> {"action":"respond","message":"Could you clarify what you'd like me to do? For example: [suggestions]"}
 

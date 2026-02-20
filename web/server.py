@@ -31,7 +31,7 @@ def _ensure_deps():
 
 _ensure_deps()
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -41,7 +41,9 @@ import yaml
 from web.database import (
     init_database, create_session, get_sessions, get_session,
     delete_session, update_session_title, add_message, get_messages,
-    build_context_string, log_tool_execution, get_tool_executions
+    build_context_string, log_tool_execution, get_tool_executions,
+    create_workspace, get_workspaces, get_workspace, delete_workspace,
+    save_uploaded_file, get_uploaded_files, get_uploaded_file, delete_uploaded_file
 )
 from agent_core.agent_loop import AgentLoop, SYSTEM_PROMPT, detect_intent
 from agent_core.llm_client import LLMClient, AVAILABLE_MODELS, MODEL_CATEGORIES
@@ -67,6 +69,8 @@ from tools.schedule_tool import ScheduleTool
 from tools.skill_manager import SkillManager
 from tools.spreadsheet_tool import SpreadsheetTool
 from tools.playbook_manager import PlaybookManager
+from tools.database_tool import DatabaseTool
+from tools.api_tool import ApiTool
 from sandbox_env.vm_manager import VMManager, IsolationLevel
 from sandbox_env.shell_session import ShellSessionManager
 from monitoring.monitor import monitor as system_monitor
@@ -136,6 +140,10 @@ def get_agent():
         agent_loop.register_tool("skill_manager", skill_manager)
         agent_loop.register_tool("spreadsheet_tool", spreadsheet_tool)
         agent_loop.register_tool("playbook_manager", playbook_manager)
+        database_tool = DatabaseTool()
+        api_tool = ApiTool()
+        agent_loop.register_tool("database_tool", database_tool)
+        agent_loop.register_tool("api_tool", api_tool)
 
         message_tool = agent_loop._tool_instances.get("message_tool")
         if message_tool:
@@ -834,6 +842,199 @@ async def api_chat_stream(session_id: str, request: Request):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+import PyPDF2
+import mimetypes
+
+UPLOAD_DIR = os.path.join(os.path.dirname(web_dir), "data", "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+TEXT_EXTENSIONS = {".txt", ".md", ".csv", ".json", ".py", ".js", ".ts", ".jsx", ".tsx",
+                   ".html", ".css", ".xml", ".yaml", ".yml", ".ini", ".cfg", ".conf",
+                   ".sh", ".bash", ".sql", ".r", ".rb", ".go", ".java", ".c", ".cpp",
+                   ".h", ".hpp", ".rs", ".toml", ".env", ".log"}
+
+
+def extract_pdf_text(file_path):
+    text = ""
+    with open(file_path, "rb") as f:
+        reader = PyPDF2.PdfReader(f)
+        for page in reader.pages:
+            text += page.extract_text() or ""
+    return text
+
+
+def extract_text_content(file_path, file_ext):
+    if file_ext == ".pdf":
+        return extract_pdf_text(file_path)
+    if file_ext in TEXT_EXTENSIONS:
+        with open(file_path, "r", errors="replace") as f:
+            return f.read()
+    return ""
+
+
+@app.post("/api/upload")
+async def api_upload_file(
+    file: UploadFile = File(...),
+    session_id: str = Form(default=""),
+    workspace_id: str = Form(default="default"),
+):
+    original_name = file.filename or "unknown"
+    file_ext = os.path.splitext(original_name)[1].lower()
+    unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+    file_path = os.path.join(UPLOAD_DIR, unique_filename)
+
+    content = await file.read()
+    file_size = len(content)
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    content_type = file.content_type or mimetypes.guess_type(original_name)[0] or "application/octet-stream"
+
+    extracted_text = ""
+    try:
+        extracted_text = extract_text_content(file_path, file_ext)
+    except Exception as e:
+        logger.warning(f"Text extraction failed for {original_name}: {e}")
+
+    metadata = {
+        "content_type": content_type,
+        "extracted_text_length": len(extracted_text),
+    }
+
+    sid = session_id if session_id else None
+    wid = workspace_id if workspace_id else None
+
+    file_record = save_uploaded_file(
+        session_id=sid,
+        workspace_id=wid,
+        filename=unique_filename,
+        original_name=original_name,
+        file_type=content_type,
+        file_size=file_size,
+        file_path=file_path,
+        metadata=metadata,
+    )
+
+    for k, v in file_record.items():
+        if hasattr(v, "isoformat"):
+            file_record[k] = v.isoformat()
+
+    return {
+        "file": file_record,
+        "extracted_text_preview": extracted_text[:2000] if extracted_text else "",
+    }
+
+
+@app.post("/api/workspaces")
+async def api_create_workspace(request: Request):
+    body = await request.json()
+    workspace_id = body.get("id", str(uuid.uuid4())[:8])
+    user_id = body.get("user_id", "default")
+    name = body.get("name", "Default Workspace")
+    workspace = create_workspace(workspace_id, user_id, name)
+    for k, v in workspace.items():
+        if hasattr(v, "isoformat"):
+            workspace[k] = v.isoformat()
+    return {"workspace": workspace}
+
+
+@app.get("/api/workspaces")
+async def api_list_workspaces(user_id: str = "default"):
+    workspaces = get_workspaces(user_id)
+    for w in workspaces:
+        for k, v in w.items():
+            if hasattr(v, "isoformat"):
+                w[k] = v.isoformat()
+    return {"workspaces": workspaces}
+
+
+@app.get("/api/workspaces/{workspace_id}")
+async def api_get_workspace(workspace_id: str):
+    workspace = get_workspace(workspace_id)
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    for k, v in workspace.items():
+        if hasattr(v, "isoformat"):
+            workspace[k] = v.isoformat()
+    return {"workspace": workspace}
+
+
+@app.delete("/api/workspaces/{workspace_id}")
+async def api_delete_workspace(workspace_id: str):
+    if delete_workspace(workspace_id):
+        return {"ok": True}
+    raise HTTPException(status_code=404, detail="Workspace not found")
+
+
+@app.get("/api/workspaces/{workspace_id}/files")
+async def api_list_workspace_files(workspace_id: str):
+    files = get_uploaded_files(workspace_id=workspace_id)
+    for f in files:
+        for k, v in f.items():
+            if hasattr(v, "isoformat"):
+                f[k] = v.isoformat()
+    return {"files": files}
+
+
+@app.get("/api/uploads")
+async def api_list_uploads(session_id: str = "", workspace_id: str = ""):
+    sid = session_id if session_id else None
+    wid = workspace_id if workspace_id else None
+    files = get_uploaded_files(session_id=sid, workspace_id=wid)
+    for f in files:
+        for k, v in f.items():
+            if hasattr(v, "isoformat"):
+                f[k] = v.isoformat()
+    return {"files": files}
+
+
+@app.get("/api/uploads/{file_id}")
+async def api_get_upload(file_id: int):
+    file_record = get_uploaded_file(file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    for k, v in file_record.items():
+        if hasattr(v, "isoformat"):
+            file_record[k] = v.isoformat()
+    return {"file": file_record}
+
+
+@app.delete("/api/uploads/{file_id}")
+async def api_delete_upload(file_id: int):
+    file_record = get_uploaded_file(file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        if os.path.exists(file_record["file_path"]):
+            os.remove(file_record["file_path"])
+    except Exception as e:
+        logger.warning(f"Failed to delete file from disk: {e}")
+    if delete_uploaded_file(file_id):
+        return {"ok": True}
+    raise HTTPException(status_code=404, detail="File not found")
+
+
+@app.get("/api/uploads/{file_id}/content")
+async def api_get_upload_content(file_id: int):
+    file_record = get_uploaded_file(file_id)
+    if not file_record:
+        raise HTTPException(status_code=404, detail="File not found")
+    file_path = file_record["file_path"]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found on disk")
+    file_ext = os.path.splitext(file_record["original_name"])[1].lower()
+    extracted_text = ""
+    try:
+        extracted_text = extract_text_content(file_path, file_ext)
+    except Exception as e:
+        logger.warning(f"Text extraction failed: {e}")
+    return {
+        "file_id": file_id,
+        "original_name": file_record["original_name"],
+        "extracted_text": extracted_text,
+    }
 
 
 @app.get("/api/sessions/{session_id}/tools")

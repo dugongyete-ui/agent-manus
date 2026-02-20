@@ -65,10 +65,38 @@ def init_database():
             updated_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_workspaces (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default',
+            name TEXT NOT NULL DEFAULT 'Default Workspace',
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS uploaded_files (
+            id SERIAL PRIMARY KEY,
+            session_id TEXT REFERENCES sessions(id) ON DELETE CASCADE,
+            workspace_id TEXT REFERENCES user_workspaces(id) ON DELETE CASCADE,
+            filename TEXT NOT NULL,
+            original_name TEXT NOT NULL,
+            file_type TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            file_path TEXT NOT NULL,
+            metadata JSONB DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS workspace_id TEXT REFERENCES user_workspaces(id)")
+    cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id TEXT DEFAULT 'default'")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_webdev_name ON webdev_projects(name)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_tool_exec_session ON tool_executions(session_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_uploaded_files_session ON uploaded_files(session_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_uploaded_files_workspace ON uploaded_files(workspace_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_user_workspaces_user ON user_workspaces(user_id)")
     conn.commit()
     cur.close()
     conn.close()
@@ -265,3 +293,110 @@ def get_tool_executions(session_id: str) -> list:
     cur.close()
     conn.close()
     return rows
+
+
+def create_workspace(workspace_id: str, user_id: str = "default", name: str = "Default Workspace") -> dict:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "INSERT INTO user_workspaces (id, user_id, name) VALUES (%s, %s, %s) RETURNING *",
+        (workspace_id, user_id, name)
+    )
+    row = cur.fetchone()
+    workspace = dict(row) if row else {}
+    conn.commit()
+    cur.close()
+    conn.close()
+    return workspace
+
+
+def get_workspaces(user_id: str = "default") -> list:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        "SELECT * FROM user_workspaces WHERE user_id = %s ORDER BY updated_at DESC",
+        (user_id,)
+    )
+    workspaces = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return workspaces
+
+
+def get_workspace(workspace_id: str) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM user_workspaces WHERE id = %s", (workspace_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_workspace(workspace_id: str) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM user_workspaces WHERE id = %s", (workspace_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
+
+
+def save_uploaded_file(session_id: Optional[str], workspace_id: Optional[str], filename: str,
+                       original_name: str, file_type: str, file_size: int,
+                       file_path: str, metadata: Optional[dict] = None) -> dict:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """INSERT INTO uploaded_files (session_id, workspace_id, filename, original_name, file_type, file_size, file_path, metadata)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (session_id, workspace_id, filename, original_name, file_type, file_size, file_path, json.dumps(metadata or {}))
+    )
+    row = cur.fetchone()
+    file_record = dict(row) if row else {}
+    conn.commit()
+    cur.close()
+    conn.close()
+    return file_record
+
+
+def get_uploaded_files(session_id: Optional[str] = None, workspace_id: Optional[str] = None) -> list:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    conditions = []
+    params = []
+    if session_id:
+        conditions.append("session_id = %s")
+        params.append(session_id)
+    if workspace_id:
+        conditions.append("workspace_id = %s")
+        params.append(workspace_id)
+    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+    cur.execute(f"SELECT * FROM uploaded_files{where} ORDER BY created_at DESC", params)
+    files = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    conn.close()
+    return files
+
+
+def get_uploaded_file(file_id: int) -> dict | None:
+    conn = get_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute("SELECT * FROM uploaded_files WHERE id = %s", (file_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return dict(row) if row else None
+
+
+def delete_uploaded_file(file_id: int) -> bool:
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM uploaded_files WHERE id = %s", (file_id,))
+    deleted = cur.rowcount > 0
+    conn.commit()
+    cur.close()
+    conn.close()
+    return deleted
