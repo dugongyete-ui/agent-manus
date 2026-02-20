@@ -102,10 +102,21 @@ Protocol server for standardized communication with external model providers.
 - `GET /api/monitor/requests` - Request logs
 - `GET /api/monitor/system` - System info
 
+### File Download
+- `GET /api/files/list` - List all generated files
+- `GET /api/files/download/{filename}` - Download a single file
+- `GET /api/files/download-zip` - Download multiple files as ZIP
+
 ### Testing
 - `POST /api/tests/run` - Run full test suite
 
 ## Recent Changes
+- 2026-02-20: Added file download API endpoints (single file, ZIP bundle, file listing)
+- 2026-02-20: Added real PDF generation using fpdf2 with styled formatting
+- 2026-02-20: Frontend now shows download buttons in tool result cards
+- 2026-02-20: Fixed spreadsheet_tool and playbook_manager integration in agent loop
+- 2026-02-20: Mounted data/generated as static directory for file preview
+- 2026-02-20: All 12 tools verified working end-to-end with real execution
 - 2026-02-19: Fixed chat sending bug - messages no longer get stuck on send (mobile & desktop)
 - 2026-02-19: Added 3-minute timeout protection for stuck streaming requests
 - 2026-02-19: Improved streaming endpoint with guaranteed done/error events and try/catch per tool
