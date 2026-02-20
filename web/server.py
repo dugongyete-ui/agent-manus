@@ -30,7 +30,7 @@ def _ensure_deps():
 _ensure_deps()
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -146,6 +146,80 @@ async def startup():
 @app.get("/api/health")
 async def api_health():
     return {"status": "healthy", "agent_state": agent_loop.state if agent_loop else "not_initialized"}
+
+
+@app.get("/api/files/list")
+async def api_list_files():
+    """List all generated files available for download."""
+    generated_dir = os.path.join(os.path.dirname(web_dir), "data", "generated")
+    workspace_dir = os.path.join(os.path.dirname(web_dir), "user_workspace")
+    files = []
+    for directory in [generated_dir, workspace_dir]:
+        if os.path.exists(directory):
+            for fname in os.listdir(directory):
+                fpath = os.path.join(directory, fname)
+                if os.path.isfile(fpath):
+                    files.append({
+                        "filename": fname,
+                        "path": fpath,
+                        "size": os.path.getsize(fpath),
+                        "modified": os.path.getmtime(fpath),
+                        "download_url": f"/api/files/download/{fname}",
+                    })
+    files.sort(key=lambda x: x["modified"], reverse=True)
+    return {"files": files}
+
+
+@app.get("/api/files/download/{filename}")
+async def api_download_file(filename: str):
+    """Download a generated file."""
+    import mimetypes
+    generated_dir = os.path.join(os.path.dirname(web_dir), "data", "generated")
+    workspace_dir = os.path.join(os.path.dirname(web_dir), "user_workspace")
+    
+    for directory in [generated_dir, workspace_dir]:
+        fpath = os.path.join(directory, filename)
+        if os.path.isfile(fpath):
+            media_type = mimetypes.guess_type(fpath)[0] or "application/octet-stream"
+            return FileResponse(
+                path=fpath,
+                filename=filename,
+                media_type=media_type,
+                headers={"Cache-Control": "no-cache"}
+            )
+    raise HTTPException(status_code=404, detail="File not found")
+
+
+@app.get("/api/files/download-zip")
+async def api_download_zip(files: str = ""):
+    """Download multiple files as a ZIP archive."""
+    import zipfile
+    import tempfile
+    
+    generated_dir = os.path.join(os.path.dirname(web_dir), "data", "generated")
+    workspace_dir = os.path.join(os.path.dirname(web_dir), "user_workspace")
+    
+    requested = [f.strip() for f in files.split(",") if f.strip()] if files else []
+    
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+    tmp_path = tmp.name
+    
+    with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for directory in [generated_dir, workspace_dir]:
+            if not os.path.exists(directory):
+                continue
+            for fname in os.listdir(directory):
+                fpath = os.path.join(directory, fname)
+                if os.path.isfile(fpath):
+                    if not requested or fname in requested:
+                        zf.write(fpath, fname)
+    
+    return FileResponse(
+        path=tmp_path,
+        filename="manus_files.zip",
+        media_type="application/zip",
+        headers={"Cache-Control": "no-cache"}
+    )
 
 
 @app.get("/", response_class=HTMLResponse)

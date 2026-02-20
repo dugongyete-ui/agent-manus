@@ -939,6 +939,20 @@ function completeLiveToolCard(toolName, result, durationMs, status) {
 
     updatePreviewWithResult(row, toolName, result);
 
+    const downloadInfo = extractDownloadInfo(toolName, result);
+    const downloadHTML = buildDownloadButton(downloadInfo);
+    if (downloadHTML) {
+        const card = row.querySelector('.live-tool-card');
+        if (card) {
+            const footer = card.querySelector('.live-tool-footer');
+            if (footer) {
+                footer.insertAdjacentHTML('beforebegin', downloadHTML);
+            } else {
+                card.insertAdjacentHTML('beforeend', downloadHTML);
+            }
+        }
+    }
+
     delete activeToolCards[toolName];
     scrollToBottom();
 }
@@ -1057,6 +1071,65 @@ function parseSearchResults(text) {
     return results;
 }
 
+function extractDownloadInfo(toolName, result) {
+    if (!result) return null;
+    const resultStr = typeof result === 'string' ? result : JSON.stringify(result);
+    
+    const patterns = [
+        /(?:berhasil|sukses|generated|created|saved|exported).*?:\s*(?:data\/generated\/|user_workspace\/)(\S+)/i,
+        /output_path.*?(?:data\/generated\/|user_workspace\/)([^\s"']+)/i,
+        /filename.*?["']([^"']+\.\w{2,5})["']/i,
+        /(?:data\/generated\/|user_workspace\/)([^\s"',\)]+\.\w{2,5})/i,
+    ];
+    
+    for (const pattern of patterns) {
+        const match = resultStr.match(pattern);
+        if (match && match[1]) {
+            const filename = match[1].replace(/['"]/g, '');
+            return {
+                filename: filename,
+                url: `/api/files/download/${encodeURIComponent(filename)}`,
+            };
+        }
+    }
+    
+    if (['generate_tool', 'slides_tool', 'file_tool'].includes(toolName)) {
+        const fileMatch = resultStr.match(/([a-zA-Z0-9_-]+\.(pdf|png|jpg|svg|mp4|gif|wav|mp3|html|md|txt|pptx|xlsx|csv|zip))/i);
+        if (fileMatch) {
+            return {
+                filename: fileMatch[1],
+                url: `/api/files/download/${encodeURIComponent(fileMatch[1])}`,
+            };
+        }
+    }
+    
+    return null;
+}
+
+function buildDownloadButton(downloadInfo) {
+    if (!downloadInfo) return '';
+    const ext = downloadInfo.filename.split('.').pop().toLowerCase();
+    const iconMap = {
+        pdf: 'ri-file-pdf-line', png: 'ri-image-line', jpg: 'ri-image-line',
+        svg: 'ri-shapes-line', mp4: 'ri-video-line', gif: 'ri-film-line',
+        wav: 'ri-music-line', mp3: 'ri-music-line', html: 'ri-html5-line',
+        md: 'ri-markdown-line', txt: 'ri-file-text-line', zip: 'ri-folder-zip-line',
+        csv: 'ri-file-excel-line', xlsx: 'ri-file-excel-line',
+    };
+    const icon = iconMap[ext] || 'ri-file-download-line';
+    return `<div class="tool-download-section" style="margin-top:8px;padding:8px 12px;background:rgba(108,92,231,0.1);border:1px solid rgba(108,92,231,0.3);border-radius:8px;display:flex;align-items:center;gap:8px">
+        <i class="${icon}" style="font-size:18px;color:#6c5ce7"></i>
+        <div style="flex:1;min-width:0">
+            <div style="font-size:12px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(downloadInfo.filename)}</div>
+        </div>
+        <a href="${downloadInfo.url}" download="${escapeHtml(downloadInfo.filename)}" 
+           style="display:inline-flex;align-items:center;gap:4px;padding:5px 12px;background:#6c5ce7;color:white;border-radius:6px;font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap;transition:background 0.2s"
+           onmouseover="this.style.background='#5a4bd1'" onmouseout="this.style.background='#6c5ce7'">
+            <i class="ri-download-2-line"></i> Download
+        </a>
+    </div>`;
+}
+
 function appendCompletedToolCard(toolExec) {
     const container = document.getElementById('messagesContainer');
     const config = TOOL_CONFIG[toolExec.tool] || { icon: 'ri-tools-line', label: toolExec.tool, color: 'var(--accent)' };
@@ -1089,6 +1162,7 @@ function appendCompletedToolCard(toolExec) {
             <div class="live-tool-preview collapsed">
                 <div class="preview-generic">${escapeHtml(result.substring(0, 1000))}</div>
             </div>
+            ${buildDownloadButton(extractDownloadInfo(toolExec.tool, toolExec.result))}
             <div class="live-tool-footer">
                 <div class="live-tool-footer-left">
                     <span class="live-tool-duration">${formatDuration(toolExec.duration_ms || 0)}</span>
