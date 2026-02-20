@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Test Presentation</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #1a1a2e; color: #e4e4ef; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+.slide { display: none; width: 100vw; height: 100vh; padding: 60px 80px; position: relative; background: #16213e; }
+.slide.active { display: flex; flex-direction: column; justify-content: center; }
+.slide-center { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
+.slide h1 { font-size: 3em; color: #6c5ce7; margin-bottom: 0.5em; }
+.slide h2 { font-size: 2.2em; color: #6c5ce7; margin-bottom: 1em; border-bottom: 3px solid #6c5ce7; padding-bottom: 0.3em; }
+.slide-body { font-size: 1.4em; line-height: 1.8; }
+.slide-number { position: absolute; bottom: 20px; right: 30px; font-size: 0.9em; opacity: 0.5; }
+.controls { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; z-index: 100; }
+.controls button { padding: 10px 24px; font-size: 1em; border: none; border-radius: 8px; cursor: pointer; background: #6c5ce7; color: white; }
+.controls button:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+    <div class="slide" id="slide-0">
+      <div class="slide-number">1/2</div>
+      <h2>Introduction</h2><div class="slide-body">Welcome to the presentation</div>
+    </div>
+    <div class="slide" id="slide-1">
+      <div class="slide-number">2/2</div>
+      <h2>Content</h2><div class="slide-body">This is the main content slide</div>
+    </div>
+<div class="controls">
+  <button onclick="prev()">&#9664; Prev</button>
+  <button onclick="next()">Next &#9654;</button>
+</div>
+<script>
+let current = 0;
+const slides = document.querySelectorAll('.slide');
+function show(n) { slides.forEach(s => s.classList.remove('active')); if(slides[n]) slides[n].classList.add('active'); }
+function next() { if(current < slides.length-1) { current++; show(current); } }
+function prev() { if(current > 0) { current--; show(current); } }
+document.addEventListener('keydown', e => { if(e.key==='ArrowRight'||e.key===' ') next(); if(e.key==='ArrowLeft') prev(); });
+show(0);
+</script>
+</body>
+</html>
