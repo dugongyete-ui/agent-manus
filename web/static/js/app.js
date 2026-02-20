@@ -59,6 +59,26 @@ const TOOL_CONFIG = {
         label: 'Skill Manager',
         color: '#fd79a8',
     },
+    spreadsheet_tool: {
+        icon: 'ri-file-excel-line',
+        label: 'Spreadsheet',
+        color: '#27ae60',
+    },
+    playbook_manager: {
+        icon: 'ri-play-list-line',
+        label: 'Playbook',
+        color: '#8e44ad',
+    },
+    database_tool: {
+        icon: 'ri-database-2-line',
+        label: 'Database',
+        color: '#2980b9',
+    },
+    api_tool: {
+        icon: 'ri-link-m',
+        label: 'API Request',
+        color: '#d35400',
+    },
 };
 
 async function api(path, options = {}) {
@@ -463,6 +483,18 @@ function getToolSubtitle(toolName, params) {
         case 'skill_manager':
             const skAction = params.action || 'list';
             return `${skAction}: ${params.name || params.query || 'skills'}`;
+        case 'spreadsheet_tool':
+            const spAction = params.action || 'read';
+            return `${spAction}: ${params.file_path || params.name || 'data'}`;
+        case 'playbook_manager':
+            const pbAction = params.action || 'list';
+            return `${pbAction}: ${params.name || 'playbook'}`;
+        case 'database_tool':
+            const dbAction = params.action || 'query';
+            return `${dbAction}: ${params.table || params.sql?.substring(0, 50) || 'database'}`;
+        case 'api_tool':
+            const apiMethod = params.method || 'GET';
+            return `${apiMethod}: ${params.url || 'API request'}`;
         default:
             return JSON.stringify(params).substring(0, 60);
     }
