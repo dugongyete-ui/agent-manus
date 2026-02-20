@@ -742,7 +742,11 @@ class AgentLoop:
                 gen_params = {k: v for k, v in params.items() if k not in ("type", "prompt")}
                 gen_result = await tool.generate(media_type, prompt, **gen_params)
                 if isinstance(gen_result, dict):
-                    result = gen_result.get("message", json.dumps(gen_result, ensure_ascii=False))
+                    msg = gen_result.get("message", json.dumps(gen_result, ensure_ascii=False))
+                    fname = gen_result.get("filename", "")
+                    if fname:
+                        msg += f"\nDownload: /api/files/download/{fname}"
+                    result = msg
                 else:
                     result = str(gen_result)
 
@@ -789,6 +793,12 @@ class AgentLoop:
                 result = await tool.execute(params)
 
             elif tool_name == "skill_manager":
+                result = await tool.execute(params)
+
+            elif tool_name == "spreadsheet_tool":
+                result = await tool.execute(params)
+
+            elif tool_name == "playbook_manager":
                 result = await tool.execute(params)
 
             else:

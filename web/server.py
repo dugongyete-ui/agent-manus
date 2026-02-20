@@ -85,6 +85,10 @@ app.add_middleware(
 web_dir = os.path.dirname(os.path.abspath(__file__))
 app.mount("/static", StaticFiles(directory=os.path.join(web_dir, "static")), name="static")
 
+generated_dir = os.path.join(os.path.dirname(web_dir), "data", "generated")
+os.makedirs(generated_dir, exist_ok=True)
+app.mount("/generated", StaticFiles(directory=generated_dir), name="generated")
+
 llm_client = LLMClient()
 knowledge_base = KnowledgeBase()
 rlhf_engine = RLHFEngine()
